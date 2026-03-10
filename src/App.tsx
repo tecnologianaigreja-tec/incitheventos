@@ -3,8 +3,21 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+import LandingPage from "./pages/LandingPage";
+import RegistrationPage from "./pages/RegistrationPage";
+import OrderStatusPage from "./pages/OrderStatusPage";
+import QRCodePage from "./pages/QRCodePage";
+import CertificateValidationPage from "./pages/CertificateValidationPage";
+import AdminLoginPage from "./pages/admin/AdminLoginPage";
+import AdminLayout from "./pages/admin/AdminLayout";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminEvents from "./pages/admin/AdminEvents";
+import AdminOrders from "./pages/admin/AdminOrders";
+import AdminRegistrations from "./pages/admin/AdminRegistrations";
+import AdminCheckin from "./pages/admin/AdminCheckin";
+import AdminCertificates from "./pages/admin/AdminCertificates";
+import AdminExport from "./pages/admin/AdminExport";
+import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
@@ -15,8 +28,22 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/evento/:slug/inscricao" element={<RegistrationPage />} />
+          <Route path="/pedido/:orderCode" element={<OrderStatusPage />} />
+          <Route path="/inscricao/:registrationCode/qrcode" element={<QRCodePage />} />
+          <Route path="/certificado/validar" element={<CertificateValidationPage />} />
+          <Route path="/certificado/validar/:code" element={<CertificateValidationPage />} />
+          <Route path="/admin/login" element={<AdminLoginPage />} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="eventos" element={<AdminEvents />} />
+            <Route path="pedidos" element={<AdminOrders />} />
+            <Route path="inscritos" element={<AdminRegistrations />} />
+            <Route path="checkin" element={<AdminCheckin />} />
+            <Route path="certificados" element={<AdminCertificates />} />
+            <Route path="exportacao" element={<AdminExport />} />
+          </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
