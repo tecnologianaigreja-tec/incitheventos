@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
@@ -47,7 +48,11 @@ export default function AdminLoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md">
+      <div className="w-full max-w-md space-y-4">
+        <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Voltar para eventos
+        </Link>
+        <Card>
         <CardHeader className="text-center">
           <CardTitle className="font-serif text-2xl">Painel Administrativo</CardTitle>
           <p className="text-sm text-muted-foreground">Faça login para continuar</p>
@@ -68,7 +73,8 @@ export default function AdminLoginPage() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
