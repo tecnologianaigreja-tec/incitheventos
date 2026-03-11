@@ -12,6 +12,7 @@ import AdminLoginPage from "./pages/admin/AdminLoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminEvents from "./pages/admin/AdminEvents";
+import AdminEventEditor from "./pages/admin/AdminEventEditor";
 import AdminOrders from "./pages/admin/AdminOrders";
 import AdminRegistrations from "./pages/admin/AdminRegistrations";
 import AdminCheckin from "./pages/admin/AdminCheckin";
@@ -38,6 +39,8 @@ const App = () => (
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
             <Route path="eventos" element={<AdminEvents />} />
+            <Route path="eventos/novo" element={<AdminEventEditor />} />
+            <Route path="eventos/:eventId" element={<AdminEventEditor />} />
             <Route path="pedidos" element={<AdminOrders />} />
             <Route path="inscritos" element={<AdminRegistrations />} />
             <Route path="checkin" element={<AdminCheckin />} />
