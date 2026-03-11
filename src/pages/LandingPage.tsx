@@ -36,7 +36,7 @@ export default function LandingPage() {
         .from("events")
         .select("*")
         .eq("slug", slug)
-        .in("status", ["published", "closed"])
+        .in("status", ["published", "closed", "concluded"])
         .single();
       if (data) setEvent(data as unknown as EventData);
       setLoading(false);
