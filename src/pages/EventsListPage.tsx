@@ -429,9 +429,9 @@ export default function EventsListPage() {
                       onClick={() => navigate(`/evento/${ev.slug}`)}
                     >
                       <div className="flex flex-col md:flex-row">
-                        {ev.banner_url && (
+                        {(ev.poster_url || ev.banner_url) && (
                           <div className="h-48 md:h-auto md:w-72 flex-shrink-0 overflow-hidden">
-                            <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            <img src={(ev.poster_url || ev.banner_url)!} alt={ev.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                           </div>
                         )}
                         <CardContent className="flex flex-1 flex-col justify-between p-6 lg:p-8">

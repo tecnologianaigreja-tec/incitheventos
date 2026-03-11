@@ -151,6 +151,11 @@ export default function AdminRegistrations() {
         filterParts.push(`${f.fieldLabel}: ${f.value}`);
       }
 
+      // When "all events", compute a representative price from available events
+      const allEventsPrice = events.length > 0
+        ? events.reduce((sum, e) => sum + e.unit_price_cents, 0) / events.length
+        : 0;
+
       const eventInfo = eventData || {
         title: "Todos os Eventos",
         start_date: events.length > 0 ? events[events.length - 1].start_date : new Date().toISOString().substring(0, 10),
@@ -160,7 +165,7 @@ export default function AdminRegistrations() {
         location_name: null,
         city: null,
         state: null,
-        unit_price_cents: 0,
+        unit_price_cents: Math.round(allEventsPrice),
         max_participants: null,
         workload_hours: null,
       };
