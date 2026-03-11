@@ -223,7 +223,9 @@ export type Database = {
           location_name: string | null
           max_participants: number | null
           organizer_name: string | null
+          poster_url: string | null
           pricing_label: string | null
+          sections_order: Json | null
           slug: string
           start_date: string
           start_time: string | null
@@ -256,7 +258,9 @@ export type Database = {
           location_name?: string | null
           max_participants?: number | null
           organizer_name?: string | null
+          poster_url?: string | null
           pricing_label?: string | null
+          sections_order?: Json | null
           slug: string
           start_date: string
           start_time?: string | null
@@ -289,7 +293,9 @@ export type Database = {
           location_name?: string | null
           max_participants?: number | null
           organizer_name?: string | null
+          poster_url?: string | null
           pricing_label?: string | null
+          sections_order?: Json | null
           slug?: string
           start_date?: string
           start_time?: string | null

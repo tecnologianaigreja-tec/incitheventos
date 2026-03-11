@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X, Check } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X, Check, ChevronUp, ChevronDown } from "lucide-react";
 
 // ─── Form Builder Types ───
 interface FieldDraft {
@@ -48,7 +48,7 @@ export default function AdminEventEditor() {
     title: "", subtitle: "", slug: "", description: "", start_date: "", end_date: "",
     start_time: "", end_time: "", location_name: "", address: "", city: "", state: "",
     workload_hours: "", organizer_name: "", unit_price_cents: "", max_participants: "",
-    status: "draft", banner_url: "", template: "classic",
+    status: "draft", banner_url: "", template: "classic", poster_url: "",
   });
 
   // ─── Landing page content ───
@@ -61,6 +61,18 @@ export default function AdminEventEditor() {
   const [ctaTitle, setCtaTitle] = useState("");
   const [ctaDescription, setCtaDescription] = useState("");
   const [pricingLabel, setPricingLabel] = useState("");
+  
+  // ─── Sections order ───
+  const DEFAULT_SECTIONS_ORDER = ["about", "audience", "includes", "poster", "faq", "cta"];
+  const SECTION_LABELS: Record<string, string> = {
+    about: "Sobre o Evento",
+    audience: "Público-Alvo",
+    includes: "O Que Está Incluso",
+    poster: "Cartaz do Evento",
+    faq: "Perguntas Frequentes",
+    cta: "CTA Final + Investimento",
+  };
+  const [sectionsOrder, setSectionsOrder] = useState<string[]>(DEFAULT_SECTIONS_ORDER);
 
   // ─── Form fields ───
   const [fields, setFields] = useState<FieldDraft[]>([]);
@@ -81,7 +93,12 @@ export default function AdminEventEditor() {
         max_participants: e.max_participants?.toString() || "", status: e.status,
         banner_url: e.banner_url || "",
         template: (e as any).template || "classic",
+        poster_url: (ev as any).poster_url || "",
       });
+      const savedOrder = (ev as any).sections_order;
+      if (Array.isArray(savedOrder) && savedOrder.length > 0) {
+        setSectionsOrder(savedOrder);
+      }
       setHeroBadge(e.hero_badge || "");
       setAboutTitle(e.about_title || "");
       setAboutDescription(e.about_description || "");
@@ -142,6 +159,7 @@ export default function AdminEventEditor() {
       max_participants: form.max_participants ? parseInt(form.max_participants) : null,
       status: form.status,
       banner_url: form.banner_url || null,
+      poster_url: form.poster_url || null,
       template: form.template,
       hero_badge: heroBadge || null,
       about_title: aboutTitle || null,
@@ -152,6 +170,7 @@ export default function AdminEventEditor() {
       cta_title: ctaTitle || null,
       cta_description: ctaDescription || null,
       pricing_label: pricingLabel || null,
+      sections_order: sectionsOrder,
     };
 
     let savedEventId = eventId;
@@ -491,6 +510,97 @@ export default function AdminEventEditor() {
                 <Label>Rótulo de preço</Label>
                 <Input value={pricingLabel} onChange={e => setPricingLabel(e.target.value)} placeholder="Ex: Inscrição Individual" />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Poster / Cartaz */}
+          <Card>
+            <CardHeader><CardTitle className="font-serif text-base">Cartaz do Evento</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {form.poster_url && (
+                <div className="relative mx-auto max-w-sm overflow-hidden rounded-lg border border-border">
+                  <img src={form.poster_url} alt="Cartaz preview" className="w-full object-contain" />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute right-2 top-2 h-8 w-8"
+                    onClick={() => setForm({ ...form, poster_url: "" })}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              {!form.poster_url && (
+                <label className="flex h-48 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/30 transition-colors hover:bg-muted/50">
+                  <Image className="h-8 w-8 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Clique para enviar o cartaz do evento</span>
+                  <span className="text-xs text-muted-foreground">JPG, PNG ou WebP (máx. 10MB)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024) { toast.error("Arquivo muito grande (máx. 10MB)"); return; }
+                      const ext = file.name.split(".").pop() || "jpg";
+                      const path = `posters/${Date.now()}.${ext}`;
+                      toast.loading("Enviando cartaz...", { id: "upload-poster" });
+                      const { error } = await supabase.storage.from("event-banners").upload(path, file);
+                      if (error) { toast.error("Erro ao enviar cartaz", { id: "upload-poster" }); return; }
+                      const { data: { publicUrl } } = supabase.storage.from("event-banners").getPublicUrl(path);
+                      setForm(prev => ({ ...prev, poster_url: publicUrl }));
+                      toast.success("Cartaz enviado!", { id: "upload-poster" });
+                    }}
+                  />
+                </label>
+              )}
+              <div>
+                <Label className="text-xs text-muted-foreground">Ou cole uma URL externa:</Label>
+                <Input value={form.poster_url} onChange={e => setForm({ ...form, poster_url: e.target.value })} placeholder="https://..." className="mt-1" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Sections Order */}
+          <Card>
+            <CardHeader><CardTitle className="font-serif text-base">Ordem das Seções</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground mb-3">Use as setas para reordenar as seções da landing page. O Hero sempre fica no topo.</p>
+              {sectionsOrder.map((sectionId, i) => (
+                <div key={sectionId} className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <span className="text-xs font-bold text-muted-foreground w-5">{i + 1}</span>
+                  <span className="flex-1 text-sm font-medium text-foreground">{SECTION_LABELS[sectionId] || sectionId}</span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={i === 0}
+                      onClick={() => {
+                        const u = [...sectionsOrder];
+                        [u[i - 1], u[i]] = [u[i], u[i - 1]];
+                        setSectionsOrder(u);
+                      }}
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={i === sectionsOrder.length - 1}
+                      onClick={() => {
+                        const u = [...sectionsOrder];
+                        [u[i], u[i + 1]] = [u[i + 1], u[i]];
+                        setSectionsOrder(u);
+                      }}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
         </TabsContent>
