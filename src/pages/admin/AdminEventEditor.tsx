@@ -512,6 +512,97 @@ export default function AdminEventEditor() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Poster / Cartaz */}
+          <Card>
+            <CardHeader><CardTitle className="font-serif text-base">Cartaz do Evento</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {form.poster_url && (
+                <div className="relative mx-auto max-w-sm overflow-hidden rounded-lg border border-border">
+                  <img src={form.poster_url} alt="Cartaz preview" className="w-full object-contain" />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute right-2 top-2 h-8 w-8"
+                    onClick={() => setForm({ ...form, poster_url: "" })}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              {!form.poster_url && (
+                <label className="flex h-48 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/30 transition-colors hover:bg-muted/50">
+                  <Image className="h-8 w-8 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Clique para enviar o cartaz do evento</span>
+                  <span className="text-xs text-muted-foreground">JPG, PNG ou WebP (máx. 10MB)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024) { toast.error("Arquivo muito grande (máx. 10MB)"); return; }
+                      const ext = file.name.split(".").pop() || "jpg";
+                      const path = `posters/${Date.now()}.${ext}`;
+                      toast.loading("Enviando cartaz...", { id: "upload-poster" });
+                      const { error } = await supabase.storage.from("event-banners").upload(path, file);
+                      if (error) { toast.error("Erro ao enviar cartaz", { id: "upload-poster" }); return; }
+                      const { data: { publicUrl } } = supabase.storage.from("event-banners").getPublicUrl(path);
+                      setForm(prev => ({ ...prev, poster_url: publicUrl }));
+                      toast.success("Cartaz enviado!", { id: "upload-poster" });
+                    }}
+                  />
+                </label>
+              )}
+              <div>
+                <Label className="text-xs text-muted-foreground">Ou cole uma URL externa:</Label>
+                <Input value={form.poster_url} onChange={e => setForm({ ...form, poster_url: e.target.value })} placeholder="https://..." className="mt-1" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Sections Order */}
+          <Card>
+            <CardHeader><CardTitle className="font-serif text-base">Ordem das Seções</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground mb-3">Use as setas para reordenar as seções da landing page. O Hero sempre fica no topo.</p>
+              {sectionsOrder.map((sectionId, i) => (
+                <div key={sectionId} className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <span className="text-xs font-bold text-muted-foreground w-5">{i + 1}</span>
+                  <span className="flex-1 text-sm font-medium text-foreground">{SECTION_LABELS[sectionId] || sectionId}</span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={i === 0}
+                      onClick={() => {
+                        const u = [...sectionsOrder];
+                        [u[i - 1], u[i]] = [u[i], u[i - 1]];
+                        setSectionsOrder(u);
+                      }}
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={i === sectionsOrder.length - 1}
+                      onClick={() => {
+                        const u = [...sectionsOrder];
+                        [u[i], u[i + 1]] = [u[i + 1], u[i]];
+                        setSectionsOrder(u);
+                      }}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ─── TAB: FORMULÁRIO ─── */}
