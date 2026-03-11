@@ -278,17 +278,17 @@ export default function LandingPage() {
                   Investimento
                 </motion.h2>
                 <motion.div variants={fadeUp}>
-                  <Card className="border-2 bg-card shadow-lg" style={{ borderColor: `hsl(${template.colors.accent} / 0.3)` }}>
-                    <CardContent className="p-10">
-                      <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  <Card className="border-2 bg-card shadow-premium-xl" style={{ borderColor: `hsl(${template.colors.accent} / 0.2)` }}>
+                    <CardContent className="p-12">
+                      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.15em] text-muted-foreground">
                         {event.pricing_label || "Inscrição Individual"}
                       </p>
-                      <p className="mb-1 font-serif text-5xl font-bold text-foreground">{formatCentsToBRL(event.unit_price_cents)}</p>
-                      <p className="mb-8 text-sm text-muted-foreground">por participante</p>
+                      <p className="mb-1 font-serif text-6xl font-bold text-foreground tracking-tight">{formatCentsToBRL(event.unit_price_cents)}</p>
+                      <p className="mb-10 text-sm text-muted-foreground">por participante</p>
                       {!isClosed && (
                         <Button
                           size="lg"
-                          className="w-full py-6 text-lg font-semibold"
+                          className="w-full py-7 text-lg font-semibold rounded-xl shadow-lg hover:scale-[1.01] transition-transform"
                           style={{
                             backgroundColor: `hsl(${template.colors.accent})`,
                             color: `hsl(${template.colors.accentForeground})`,
