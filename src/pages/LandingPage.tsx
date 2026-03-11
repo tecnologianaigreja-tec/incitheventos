@@ -252,9 +252,6 @@ export default function LandingPage() {
         if (sectionId === "poster" && hasPoster) return (
           <section key="poster" className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
             <motion.div className="container mx-auto max-w-2xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-              <motion.h2 variants={fadeUp} className="mb-8 font-serif text-3xl font-bold text-foreground md:text-4xl">
-                Cartaz do Evento
-              </motion.h2>
               <motion.div variants={fadeUp}>
                 <img
                   src={(event as any).poster_url}
