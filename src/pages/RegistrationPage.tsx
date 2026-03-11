@@ -316,9 +316,12 @@ export default function RegistrationPage() {
     return { ...data };
   }
 
+  const isFull = event?.max_participants ? registrationCount >= event.max_participants : false;
+
   async function handleSubmit() {
     if (!event) return;
     if (submitting) return;
+    if (isFull) { toast.error("Vagas esgotadas para este evento"); return; }
 
     if (tab === "individual") {
       const errs = validateForm(individual, customFields);
