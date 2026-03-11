@@ -80,6 +80,7 @@ export default function AdminEventEditor() {
         organizer_name: e.organizer_name || "", unit_price_cents: (e.unit_price_cents / 100).toString(),
         max_participants: e.max_participants?.toString() || "", status: e.status,
         banner_url: e.banner_url || "",
+        template: (e as any).template || "classic",
       });
       setHeroBadge(e.hero_badge || "");
       setAboutTitle(e.about_title || "");
