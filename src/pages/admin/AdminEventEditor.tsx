@@ -163,6 +163,7 @@ export default function AdminEventEditor() {
       banner_url: form.banner_url || null,
       poster_url: form.poster_url || null,
       template: form.template,
+      show_remaining_spots: form.show_remaining_spots,
       hero_badge: heroBadge || null,
       about_title: aboutTitle || null,
       about_description: aboutDescription || null,
