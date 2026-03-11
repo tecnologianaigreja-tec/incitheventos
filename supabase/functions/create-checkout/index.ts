@@ -192,17 +192,14 @@ Deno.serve(async (req) => {
       details: { order_code: orderCode, purchase_type, participants_count: participantsCount, total_price_cents: totalPriceCents },
     });
 
-    // InfinitePay checkout integration (prepared but uses placeholder)
-    // In production, call InfinitePay API here to create checkout link
-    const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY");
+    // InfinitePay checkout via public endpoint (no API key needed)
     const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE");
-    const appUrl = Deno.env.get("APP_URL") || "https://id-preview--c662d13e-a60d-4d31-b515-d92eabc6eb77.lovable.app";
+    const appUrl = Deno.env.get("APP_URL") || "https://incitheventos.lovable.app";
 
     let paymentLink: string | null = null;
 
-    if (infinitepayApiKey && infinitepayHandle) {
+    if (infinitepayHandle) {
       try {
-        // InfinitePay API call
         const checkoutPayload = {
           handle: infinitepayHandle,
           order_nsu: orderNsu,
@@ -216,22 +213,27 @@ Deno.serve(async (req) => {
           webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
         };
 
-        const ipRes = await fetch("https://api.infinitepay.io/v2/checkout", {
+        console.log("InfinitePay checkout payload:", JSON.stringify(checkoutPayload));
+
+        const ipRes = await fetch("https://api.infinitepay.io/invoices/public/checkout/links", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${infinitepayApiKey}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(checkoutPayload),
         });
 
+        const ipData = await ipRes.json();
+        console.log("InfinitePay response:", ipRes.status, JSON.stringify(ipData));
+
         if (ipRes.ok) {
-          const ipData = await ipRes.json();
-          paymentLink = ipData.checkout_url || ipData.url || null;
+          paymentLink = ipData.checkout_url || ipData.url || ipData.link || null;
+        } else {
+          console.error("InfinitePay error response:", ipData);
         }
       } catch (err) {
         console.error("InfinitePay error:", err);
       }
+    } else {
+      console.warn("INFINITEPAY_HANDLE not configured");
     }
 
     // Update order with payment link if available
