@@ -93,7 +93,12 @@ export default function AdminEventEditor() {
         max_participants: e.max_participants?.toString() || "", status: e.status,
         banner_url: e.banner_url || "",
         template: (e as any).template || "classic",
+        poster_url: (ev as any).poster_url || "",
       });
+      const savedOrder = (ev as any).sections_order;
+      if (Array.isArray(savedOrder) && savedOrder.length > 0) {
+        setSectionsOrder(savedOrder);
+      }
       setHeroBadge(e.hero_badge || "");
       setAboutTitle(e.about_title || "");
       setAboutDescription(e.about_description || "");
