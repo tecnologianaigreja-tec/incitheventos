@@ -346,7 +346,7 @@ export default function LandingPage() {
                       {event.cta_description}
                     </motion.p>
                   )}
-                  {!isClosed && (
+                  {!isDisabled && (
                     <motion.div variants={fadeUp}>
                       <Button
                         size="lg"
