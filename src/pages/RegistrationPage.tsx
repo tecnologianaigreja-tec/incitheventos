@@ -281,13 +281,12 @@ export default function RegistrationPage() {
       if (ev) {
         setEvent(ev as unknown as EventData);
         // Load custom form fields
-        const { data: ff } = await supabase
-          .from("event_form_fields")
-          .select("*")
-          .eq("event_id", ev.id)
-          .eq("is_active", true)
-          .order("sort_order");
+        const [{ data: ff }, { count }] = await Promise.all([
+          supabase.from("event_form_fields").select("*").eq("event_id", ev.id).eq("is_active", true).order("sort_order"),
+          supabase.from("registrations").select("*", { count: "exact", head: true }).eq("event_id", ev.id).in("registration_status", ["confirmed", "pending_payment"]),
+        ]);
         if (ff) setCustomFields(ff as unknown as EventFormField[]);
+        setRegistrationCount(count || 0);
       }
       setLoading(false);
     }
