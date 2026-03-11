@@ -292,7 +292,19 @@ export default function CertificateTemplateEditor({ eventId }: Props) {
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Nome</Label>
-                  <Input className="h-8 text-sm" value={sig.name} onChange={e => updateSignature(idx, "name", e.target.value)} placeholder="Nome do assinante" />
+                  <div className="flex gap-1.5 mb-1 flex-wrap">
+                    {VARIABLES.map(v => (
+                      <Badge
+                        key={v.key}
+                        variant="outline"
+                        className="cursor-pointer text-[10px] px-1.5 py-0 h-5 hover:bg-primary hover:text-primary-foreground transition-colors"
+                        onClick={() => updateSignature(idx, "name", (sig.name ? sig.name + " " : "") + v.key)}
+                      >
+                        {v.key}
+                      </Badge>
+                    ))}
+                  </div>
+                  <Input className="h-8 text-sm" value={sig.name} onChange={e => updateSignature(idx, "name", e.target.value)} placeholder="Nome ou {nome} para captura automática" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Cargo</Label>
