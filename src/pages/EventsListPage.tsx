@@ -113,58 +113,70 @@ export default function EventsListPage() {
     const doc = new jsPDF({ unit: "mm", format: [105, 148] });
 
     const pw = doc.internal.pageSize.getWidth();
-    let y = 20;
+    const margin = 10;
+    const maxW = pw - margin * 2;
+    let y = 16;
 
-    // Title
-    doc.setFontSize(18);
+    // Title — wrap to fit
+    doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text(reg.events.title, pw / 2, y, { align: "center" });
-    y += 10;
+    const titleLines: string[] = doc.splitTextToSize(reg.events.title, maxW);
+    doc.text(titleLines, pw / 2, y, { align: "center" });
+    y += titleLines.length * 6 + 4;
 
-    // Date & location
-    doc.setFontSize(10);
+    // Date & time
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     const dateStr = new Date(reg.events.start_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
     let infoLine = dateStr;
-    if (reg.events.start_time) infoLine += `  ${reg.events.start_time}${reg.events.end_time ? ` - ${reg.events.end_time}` : ""}`;
+    if (reg.events.start_time) {
+      const startT = reg.events.start_time.slice(0, 5);
+      const endT = reg.events.end_time ? reg.events.end_time.slice(0, 5) : "";
+      infoLine += `  •  ${startT}${endT ? ` – ${endT}` : ""}`;
+    }
     doc.text(infoLine, pw / 2, y, { align: "center" });
-    y += 6;
+    y += 5;
 
+    // Location
     if (reg.events.location_name) {
-      let loc = reg.events.location_name;
-      if (reg.events.city) loc += `, ${reg.events.city}`;
-      if (reg.events.state) loc += ` - ${reg.events.state}`;
-      doc.text(loc, pw / 2, y, { align: "center" });
-      y += 6;
+      let loc = reg.events.location_name.trim();
+      if (reg.events.city) loc += `, ${reg.events.city.trim()}`;
+      if (reg.events.state) loc += ` – ${reg.events.state.trim()}`;
+      const locLines: string[] = doc.splitTextToSize(loc, maxW);
+      doc.text(locLines, pw / 2, y, { align: "center" });
+      y += locLines.length * 4 + 2;
     }
 
     // Divider
-    y += 4;
-    doc.setDrawColor(200);
-    doc.line(20, y, pw - 20, y);
-    y += 8;
+    y += 3;
+    doc.setDrawColor(180);
+    doc.line(margin + 10, y, pw - margin - 10, y);
+    y += 7;
 
     // Participant info
-    doc.setFontSize(11);
+    doc.setFontSize(10);
+    const isPaid = reg.payment_status === "approved" || reg.registration_status === "confirmed";
     const fields = [
       ["Nome", reg.full_name],
       ["E-mail", reg.email],
       ["Código", reg.registration_code],
-      ["Status", reg.payment_status === "approved" ? "Confirmada" : "Pendente"],
+      ["Status", isPaid ? "Confirmada" : "Pendente"],
     ];
     for (const [label, value] of fields) {
       doc.setFont("helvetica", "bold");
-      doc.text(`${label}: `, 20, y);
+      const labelText = `${label}: `;
+      doc.text(labelText, margin + 5, y);
       doc.setFont("helvetica", "normal");
-      doc.text(value, 20 + doc.getTextWidth(`${label}: `), y);
-      y += 7;
+      const labelW = doc.getTextWidth(labelText);
+      const valueMaxW = maxW - labelW - 5;
+      const valueLines: string[] = doc.splitTextToSize(value, valueMaxW);
+      doc.text(valueLines, margin + 5 + labelW, y);
+      y += valueLines.length * 5 + 2;
     }
 
     // QR Code
     if (reg.qr_token) {
-      y += 6;
-      const qrCanvas = document.createElement("canvas");
-      // Use the QR SVG already in DOM
+      y += 4;
       const svgEl = document.getElementById("credential-qr");
       if (svgEl) {
         const svgData = new XMLSerializer().serializeToString(svgEl);
@@ -172,6 +184,7 @@ export default function EventsListPage() {
         const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(svgBlob);
         img.onload = () => {
+          const qrCanvas = document.createElement("canvas");
           qrCanvas.width = 360;
           qrCanvas.height = 360;
           const ctx = qrCanvas.getContext("2d")!;
@@ -181,10 +194,10 @@ export default function EventsListPage() {
           URL.revokeObjectURL(url);
 
           const qrDataUrl = qrCanvas.toDataURL("image/png");
-          const qrSize = 40;
+          const qrSize = 35;
           doc.addImage(qrDataUrl, "PNG", (pw - qrSize) / 2, y, qrSize, qrSize);
-          y += qrSize + 6;
-          doc.setFontSize(8);
+          y += qrSize + 4;
+          doc.setFontSize(7);
           doc.text("Apresente este QR Code no dia do evento para check-in.", pw / 2, y, { align: "center" });
 
           doc.save(`credencial-${reg.registration_code}.pdf`);
