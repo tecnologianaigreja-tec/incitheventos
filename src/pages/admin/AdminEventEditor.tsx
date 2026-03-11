@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData, EventFormField, TargetAudienceItem, FaqItem } from "@/lib/types";
 import { formatCentsToBRL } from "@/lib/constants";
+import { LANDING_TEMPLATES } from "@/lib/templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X, Check } from "lucide-react";
 
 // ─── Form Builder Types ───
 interface FieldDraft {
