@@ -87,6 +87,12 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background" style={templateStyles}>
+      {/* Back to events */}
+      <div className="absolute top-4 left-4 z-50">
+        <Button variant="ghost" size="sm" className="text-white/80 hover:text-white hover:bg-white/10" onClick={() => navigate("/")}>
+          <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
+        </Button>
+      </div>
       {/* HERO */}
       <section
         className="relative overflow-hidden px-4 py-24 text-[hsl(var(--lp-primary-foreground))] md:py-32"
