@@ -18,6 +18,42 @@ export interface EventData {
   unit_price_cents: number;
   max_participants: number | null;
   status: "draft" | "published" | "closed" | "canceled";
+  // Landing page content
+  hero_badge: string | null;
+  about_title: string | null;
+  about_description: string | null;
+  target_audience: TargetAudienceItem[];
+  includes_items: string[];
+  faq_items: FaqItem[];
+  cta_title: string | null;
+  cta_description: string | null;
+  pricing_label: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TargetAudienceItem {
+  title: string;
+  description: string;
+  icon: string;
+}
+
+export interface FaqItem {
+  question: string;
+  answer: string;
+}
+
+export interface EventFormField {
+  id: string;
+  event_id: string;
+  field_label: string;
+  field_key: string;
+  field_type: "text" | "select" | "date" | "phone" | "email" | "cpf" | "textarea";
+  is_required: boolean;
+  placeholder: string | null;
+  options: string[];
+  sort_order: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -100,9 +136,11 @@ export interface ParticipantForm {
   congregation: string;
   church_role: string;
   church_function: string;
+  [key: string]: string; // Allow dynamic custom fields
 }
 
-export interface IndividualRegistrationForm extends ParticipantForm {
+export interface IndividualRegistrationForm {
+  participant: ParticipantForm;
   consent_terms: boolean;
   consent_data_usage: boolean;
 }

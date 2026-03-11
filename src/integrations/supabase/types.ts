@@ -150,71 +150,151 @@ export type Database = {
           },
         ]
       }
+      event_form_fields: {
+        Row: {
+          created_at: string
+          event_id: string
+          field_key: string
+          field_label: string
+          field_type: string
+          id: string
+          is_active: boolean
+          is_required: boolean
+          options: Json | null
+          placeholder: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          field_key: string
+          field_label: string
+          field_type?: string
+          id?: string
+          is_active?: boolean
+          is_required?: boolean
+          options?: Json | null
+          placeholder?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          field_key?: string
+          field_label?: string
+          field_type?: string
+          id?: string
+          is_active?: boolean
+          is_required?: boolean
+          options?: Json | null
+          placeholder?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_form_fields_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       events: {
         Row: {
+          about_description: string | null
+          about_title: string | null
           address: string | null
           banner_url: string | null
           city: string | null
           created_at: string
+          cta_description: string | null
+          cta_title: string | null
           description: string | null
           end_date: string
           end_time: string | null
+          faq_items: Json | null
+          hero_badge: string | null
           id: string
+          includes_items: Json | null
           location_name: string | null
           max_participants: number | null
           organizer_name: string | null
+          pricing_label: string | null
           slug: string
           start_date: string
           start_time: string | null
           state: string | null
           status: Database["public"]["Enums"]["event_status"]
           subtitle: string | null
+          target_audience: Json | null
           title: string
           unit_price_cents: number
           updated_at: string
           workload_hours: number | null
         }
         Insert: {
+          about_description?: string | null
+          about_title?: string | null
           address?: string | null
           banner_url?: string | null
           city?: string | null
           created_at?: string
+          cta_description?: string | null
+          cta_title?: string | null
           description?: string | null
           end_date: string
           end_time?: string | null
+          faq_items?: Json | null
+          hero_badge?: string | null
           id?: string
+          includes_items?: Json | null
           location_name?: string | null
           max_participants?: number | null
           organizer_name?: string | null
+          pricing_label?: string | null
           slug: string
           start_date: string
           start_time?: string | null
           state?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           subtitle?: string | null
+          target_audience?: Json | null
           title: string
           unit_price_cents?: number
           updated_at?: string
           workload_hours?: number | null
         }
         Update: {
+          about_description?: string | null
+          about_title?: string | null
           address?: string | null
           banner_url?: string | null
           city?: string | null
           created_at?: string
+          cta_description?: string | null
+          cta_title?: string | null
           description?: string | null
           end_date?: string
           end_time?: string | null
+          faq_items?: Json | null
+          hero_badge?: string | null
           id?: string
+          includes_items?: Json | null
           location_name?: string | null
           max_participants?: number | null
           organizer_name?: string | null
+          pricing_label?: string | null
           slug?: string
           start_date?: string
           start_time?: string | null
           state?: string | null
           status?: Database["public"]["Enums"]["event_status"]
           subtitle?: string | null
+          target_audience?: Json | null
           title?: string
           unit_price_cents?: number
           updated_at?: string
