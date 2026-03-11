@@ -142,6 +142,7 @@ export default function AdminEventEditor() {
       max_participants: form.max_participants ? parseInt(form.max_participants) : null,
       status: form.status,
       banner_url: form.banner_url || null,
+      template: form.template,
       hero_badge: heroBadge || null,
       about_title: aboutTitle || null,
       about_description: aboutDescription || null,
