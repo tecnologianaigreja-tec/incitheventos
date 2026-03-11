@@ -27,6 +27,7 @@ export default function LandingPage() {
   const { slug } = useParams<{ slug: string }>();
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [registrationCount, setRegistrationCount] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -38,7 +39,16 @@ export default function LandingPage() {
         .eq("slug", slug)
         .in("status", ["published", "closed", "concluded"])
         .single();
-      if (data) setEvent(data as unknown as EventData);
+      if (data) {
+        setEvent(data as unknown as EventData);
+        // Count active registrations
+        const { count } = await supabase
+          .from("registrations")
+          .select("*", { count: "exact", head: true })
+          .eq("event_id", data.id)
+          .in("registration_status", ["confirmed", "pending_payment"]);
+        setRegistrationCount(count || 0);
+      }
       setLoading(false);
     }
     load();
