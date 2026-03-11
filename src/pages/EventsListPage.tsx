@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download } from "lucide-react";
+import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download, CreditCard } from "lucide-react";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 
