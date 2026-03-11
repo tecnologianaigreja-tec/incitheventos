@@ -1,11 +1,20 @@
 import jsPDF from "jspdf";
 
+export interface SignatureItem {
+  image_url?: string | null;
+  name: string;
+  title: string;
+}
+
+export type FrameStyle = "classic" | "elegant" | "modern" | "minimal";
+export type SignaturePosition = "left" | "center" | "right";
+
 interface CertificatePdfOptions {
   logoUrl?: string | null;
   bodyText: string;
-  signatureImageUrl?: string | null;
-  signatureName?: string | null;
-  signatureTitle?: string | null;
+  frameStyle: FrameStyle;
+  signatures: SignatureItem[];
+  signaturePosition: SignaturePosition;
   // Variables for substitution
   participantName: string;
   eventTitle: string;
@@ -26,27 +35,79 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+function drawFrame(doc: jsPDF, style: FrameStyle, w: number, h: number) {
+  switch (style) {
+    case "classic": {
+      doc.setDrawColor(30, 58, 95);
+      doc.setLineWidth(1.5);
+      doc.rect(10, 10, w - 20, h - 20);
+      doc.setLineWidth(0.5);
+      doc.rect(12, 12, w - 24, h - 24);
+      break;
+    }
+    case "elegant": {
+      // Double gold border with corner accents
+      doc.setDrawColor(180, 150, 60);
+      doc.setLineWidth(2);
+      doc.rect(8, 8, w - 16, h - 16);
+      doc.setDrawColor(180, 150, 60);
+      doc.setLineWidth(0.5);
+      doc.rect(13, 13, w - 26, h - 26);
+      // Corner ornaments
+      const cornerLen = 20;
+      const corners = [
+        [13, 13], [w - 13, 13], [13, h - 13], [w - 13, h - 13],
+      ];
+      doc.setLineWidth(1.2);
+      corners.forEach(([cx, cy], i) => {
+        const dx = i % 2 === 0 ? 1 : -1;
+        const dy = i < 2 ? 1 : -1;
+        doc.line(cx, cy, cx + dx * cornerLen, cy);
+        doc.line(cx, cy, cx, cy + dy * cornerLen);
+      });
+      break;
+    }
+    case "modern": {
+      // Thick left accent + thin border
+      doc.setDrawColor(45, 100, 160);
+      doc.setFillColor(45, 100, 160);
+      doc.rect(8, 8, 5, h - 16, "F");
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.5);
+      doc.rect(8, 8, w - 16, h - 16);
+      // Top accent line
+      doc.setDrawColor(45, 100, 160);
+      doc.setLineWidth(1.5);
+      doc.line(13, 8, w - 8, 8);
+      break;
+    }
+    case "minimal": {
+      // Simple thin border with generous margin
+      doc.setDrawColor(160, 160, 160);
+      doc.setLineWidth(0.3);
+      doc.rect(15, 15, w - 30, h - 30);
+      break;
+    }
+  }
+}
+
 export async function generateCertificatePdf(options: CertificatePdfOptions): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = 297;
   const pageH = 210;
-  const margin = 20;
+  const margin = 25;
 
-  // Border
-  doc.setDrawColor(30, 58, 95);
-  doc.setLineWidth(1.5);
-  doc.rect(10, 10, pageW - 20, pageH - 20);
-  doc.setLineWidth(0.5);
-  doc.rect(12, 12, pageW - 24, pageH - 24);
+  // Frame
+  drawFrame(doc, options.frameStyle || "classic", pageW, pageH);
 
-  let currentY = 30;
+  let currentY = 32;
 
   // Logo
   if (options.logoUrl) {
     try {
       const img = await loadImage(options.logoUrl);
-      const maxLogoH = 30;
-      const maxLogoW = 80;
+      const maxLogoH = 28;
+      const maxLogoW = 75;
       const ratio = Math.min(maxLogoW / img.width, maxLogoH / img.height);
       const logoW = img.width * ratio;
       const logoH = img.height * ratio;
@@ -59,10 +120,11 @@ export async function generateCertificatePdf(options: CertificatePdfOptions): Pr
 
   // Title
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(28);
-  doc.setTextColor(30, 58, 95);
+  doc.setFontSize(26);
+  const titleColor: [number, number, number] = options.frameStyle === "elegant" ? [140, 110, 30] : [30, 58, 95];
+  doc.setTextColor(...titleColor);
   doc.text("CERTIFICADO", pageW / 2, currentY, { align: "center" });
-  currentY += 15;
+  currentY += 14;
 
   // Body text with variable substitution
   let body = options.bodyText;
@@ -74,52 +136,87 @@ export async function generateCertificatePdf(options: CertificatePdfOptions): Pr
   body = body.replace(/\{codigo\}/g, options.certificateCode);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(13);
+  doc.setFontSize(12);
   doc.setTextColor(40, 40, 40);
-  const textLines = doc.splitTextToSize(body, pageW - margin * 2 - 20);
-  doc.text(textLines, pageW / 2, currentY, { align: "center", lineHeightFactor: 1.6 });
-  currentY += textLines.length * 7 + 15;
+  const textLines = doc.splitTextToSize(body, pageW - margin * 2 - 10);
+  doc.text(textLines, pageW / 2, currentY, { align: "center", lineHeightFactor: 1.7 });
+  currentY += textLines.length * 7 + 10;
 
-  // Signature area
-  const sigY = Math.max(currentY, pageH - 65);
+  // Signatures
+  const sigs = options.signatures.filter(s => s.name || s.image_url);
+  if (sigs.length > 0) {
+    const sigY = Math.max(currentY + 5, pageH - 60);
+    const sigCount = sigs.length;
 
-  if (options.signatureImageUrl) {
-    try {
-      const sigImg = await loadImage(options.signatureImageUrl);
-      const sigMaxH = 20;
-      const sigMaxW = 60;
-      const sigRatio = Math.min(sigMaxW / sigImg.width, sigMaxH / sigImg.height);
-      const sigW = sigImg.width * sigRatio;
-      const sigH = sigImg.height * sigRatio;
-      doc.addImage(sigImg, "PNG", (pageW - sigW) / 2, sigY, sigW, sigH);
-    } catch {
-      // skip signature image
+    // Calculate x positions based on position setting
+    let sigXPositions: number[] = [];
+    const sigBlockWidth = 80;
+
+    if (options.signaturePosition === "center") {
+      const totalWidth = sigCount * sigBlockWidth + (sigCount - 1) * 20;
+      const startX = (pageW - totalWidth) / 2 + sigBlockWidth / 2;
+      for (let i = 0; i < sigCount; i++) {
+        sigXPositions.push(startX + i * (sigBlockWidth + 20));
+      }
+    } else if (options.signaturePosition === "left") {
+      const startX = margin + sigBlockWidth / 2;
+      for (let i = 0; i < sigCount; i++) {
+        sigXPositions.push(startX + i * (sigBlockWidth + 20));
+      }
+    } else {
+      // right
+      const startX = pageW - margin - sigBlockWidth / 2 - (sigCount - 1) * (sigBlockWidth + 20);
+      for (let i = 0; i < sigCount; i++) {
+        sigXPositions.push(startX + i * (sigBlockWidth + 20));
+      }
     }
-  }
 
-  // Signature line
-  const lineY = sigY + 25;
-  doc.setDrawColor(80, 80, 80);
-  doc.setLineWidth(0.3);
-  doc.line(pageW / 2 - 40, lineY, pageW / 2 + 40, lineY);
+    for (let i = 0; i < sigCount; i++) {
+      const sig = sigs[i];
+      const cx = sigXPositions[i];
 
-  if (options.signatureName) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(40, 40, 40);
-    doc.text(options.signatureName, pageW / 2, lineY + 5, { align: "center" });
-  }
+      // Signature image
+      if (sig.image_url) {
+        try {
+          const sigImg = await loadImage(sig.image_url);
+          const sigMaxH = 18;
+          const sigMaxW = 55;
+          const sigRatio = Math.min(sigMaxW / sigImg.width, sigMaxH / sigImg.height);
+          const sigW = sigImg.width * sigRatio;
+          const sigH = sigImg.height * sigRatio;
+          doc.addImage(sigImg, "PNG", cx - sigW / 2, sigY, sigW, sigH);
+        } catch {
+          // skip
+        }
+      }
 
-  if (options.signatureTitle) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(options.signatureTitle, pageW / 2, lineY + 10, { align: "center" });
+      // Line
+      const lineY = sigY + 22;
+      doc.setDrawColor(80, 80, 80);
+      doc.setLineWidth(0.3);
+      doc.line(cx - 35, lineY, cx + 35, lineY);
+
+      // Name
+      if (sig.name) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(40, 40, 40);
+        doc.text(sig.name, cx, lineY + 5, { align: "center" });
+      }
+
+      // Title
+      if (sig.title) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text(sig.title, cx, lineY + 9, { align: "center" });
+      }
+    }
   }
 
   // Validation code at bottom
   doc.setFontSize(7);
   doc.setTextColor(140, 140, 140);
-  doc.text(`Código: ${options.certificateCode} | Validação: ${options.validationHash}`, pageW / 2, pageH - 14, { align: "center" });
+  doc.text(`Código: ${options.certificateCode} | Validação: ${options.validationHash}`, pageW / 2, pageH - 12, { align: "center" });
 
   return doc;
 }

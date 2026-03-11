@@ -98,12 +98,13 @@ export default function AdminCertificates() {
 
       const event = events.find(e => e.id === reg.event_id);
 
+      const sigs = (template?.signatures as unknown as any[]) || [{ image_url: template?.signature_image_url, name: template?.signature_name || "", title: template?.signature_title || "" }];
       const doc = await generateCertificatePdf({
         logoUrl: template?.logo_url,
         bodyText: template?.body_text || "Certificamos que {nome} participou do evento {evento}, realizado no período de {data_inicio} a {data_fim}, com carga horária de {carga_horaria} horas.",
-        signatureImageUrl: template?.signature_image_url,
-        signatureName: template?.signature_name,
-        signatureTitle: template?.signature_title,
+        frameStyle: (template?.frame_style as any) || "classic",
+        signatures: sigs,
+        signaturePosition: (template?.signature_position as any) || "center",
         participantName: reg.full_name,
         eventTitle: event?.title || "",
         startDate: event?.start_date ? format(new Date(event.start_date + "T12:00:00"), "dd/MM/yyyy") : "",
