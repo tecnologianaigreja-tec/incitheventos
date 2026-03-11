@@ -248,6 +248,7 @@ export default function AdminEventEditor() {
                     <SelectItem value="draft">Rascunho</SelectItem>
                     <SelectItem value="published">Publicado</SelectItem>
                     <SelectItem value="closed">Encerrado</SelectItem>
+                    <SelectItem value="concluded">Concluído</SelectItem>
                     <SelectItem value="canceled">Cancelado</SelectItem>
                   </SelectContent>
                 </Select>
