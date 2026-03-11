@@ -317,11 +317,11 @@ export default function EventsListPage() {
                               <div className="mt-1 flex items-center justify-between">
                                 <p className="text-xs text-muted-foreground">
                                   Código: {r.registration_code} · Status:{" "}
-                                  <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                                    {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                                  <span className={(r.payment_status === "approved" || r.registration_status === "confirmed") ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                                    {(r.payment_status === "approved" || r.registration_status === "confirmed") ? "Confirmada" : "Pendente"}
                                   </span>
                                 </p>
-                                {r.payment_status !== "approved" && (
+                                {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
                                   <Button
                                     size="sm"
                                     variant="default"
