@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X } from "lucide-react";
 
 // ─── Form Builder Types ───
 interface FieldDraft {
