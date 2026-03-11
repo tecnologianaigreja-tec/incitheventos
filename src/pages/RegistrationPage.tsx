@@ -94,6 +94,55 @@ function DynamicField({ field, value, onChange, error }: {
   }
 }
 
+// ─── Buyer-only form (when NOT participant): nome, cpf, whatsapp ───
+function BuyerOnlySection({ formData, onChange, errors }: {
+  formData: Record<string, string>;
+  onChange: (data: Record<string, string>) => void;
+  errors: Record<string, string>;
+}) {
+  const update = (key: string, val: string) => onChange({ ...formData, [key]: val });
+
+  return (
+    <div className="space-y-4 rounded-lg border border-border/50 bg-card p-6">
+      <h3 className="font-serif text-lg font-semibold text-foreground">Responsável pela Compra</h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Label>Nome completo *</Label>
+          <Input
+            value={formData.full_name || ""}
+            onChange={e => update("full_name", e.target.value)}
+            placeholder="Nome completo"
+            className={errors.full_name ? "border-destructive" : ""}
+          />
+          {errors.full_name && <p className="mt-1 text-xs text-destructive">{errors.full_name}</p>}
+        </div>
+        <div>
+          <Label>CPF *</Label>
+          <Input
+            value={formData.cpf || ""}
+            onChange={e => update("cpf", formatCPF(e.target.value))}
+            placeholder="000.000.000-00"
+            maxLength={14}
+            className={errors.cpf ? "border-destructive" : ""}
+          />
+          {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
+        </div>
+        <div>
+          <Label>WhatsApp *</Label>
+          <Input
+            value={formData.phone || ""}
+            onChange={e => update("phone", formatPhone(e.target.value))}
+            placeholder="(00) 00000-0000"
+            maxLength={15}
+            className={errors.phone ? "border-destructive" : ""}
+          />
+          {errors.phone && <p className="mt-1 text-xs text-destructive">{errors.phone}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Participant form with fixed + dynamic fields ───
 function ParticipantSection({ formData, onChange, errors, customFields, title }: {
   formData: Record<string, string>;
