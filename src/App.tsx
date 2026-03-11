@@ -29,7 +29,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<EventsListPage />} />
+          <Route path="/evento/:slug" element={<LandingPage />} />
           <Route path="/evento/:slug/inscricao" element={<RegistrationPage />} />
           <Route path="/pedido/:orderCode" element={<OrderStatusPage />} />
           <Route path="/inscricao/:registrationCode/qrcode" element={<QRCodePage />} />
