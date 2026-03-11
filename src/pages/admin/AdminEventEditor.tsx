@@ -49,6 +49,7 @@ export default function AdminEventEditor() {
     start_time: "", end_time: "", location_name: "", address: "", city: "", state: "",
     workload_hours: "", organizer_name: "", unit_price_cents: "", max_participants: "",
     status: "draft", banner_url: "", template: "classic", poster_url: "",
+    show_remaining_spots: false,
   });
 
   // ─── Landing page content ───
