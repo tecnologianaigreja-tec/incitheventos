@@ -67,7 +67,10 @@ Deno.serve(async (req) => {
     let paymentStatus: string | null = null;
     const status = (payload.status || payload.event_type || "").toLowerCase();
 
-    if (["approved", "paid", "captured", "completed", "success"].includes(status)) {
+    // InfinitePay specific: if paid_amount exists and > 0, it's a successful payment
+    if (payload.paid_amount && payload.paid_amount > 0) {
+      paymentStatus = "approved";
+    } else if (["approved", "paid", "captured", "completed", "success"].includes(status)) {
       paymentStatus = "approved";
     } else if (["refused", "declined", "failed", "rejected"].includes(status)) {
       paymentStatus = "refused";
@@ -78,6 +81,8 @@ Deno.serve(async (req) => {
     } else if (["refunded", "reversed"].includes(status)) {
       paymentStatus = "refunded";
     }
+
+    console.log("Webhook mapped status:", { eventType, status, paymentStatus, paid_amount: payload.paid_amount });
 
     if (paymentStatus) {
       // Update order
