@@ -73,7 +73,7 @@ export default function AdminLoginPage() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
-  );
 }

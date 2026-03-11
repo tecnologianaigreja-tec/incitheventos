@@ -7,7 +7,7 @@ import { getTemplateById, getTemplateStyles } from "@/lib/templates";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar, MapPin, Clock, Users, BookOpen, Award, Shield, ChevronRight, Star } from "lucide-react";
+import { Calendar, MapPin, Clock, Users, BookOpen, Award, Shield, ChevronRight, Star, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 
 const fadeUp = {
