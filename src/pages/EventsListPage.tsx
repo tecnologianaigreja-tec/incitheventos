@@ -218,27 +218,51 @@ export default function EventsListPage() {
       {/* HEADER */}
       {settings?.header_type === "banner" && settings.header_banner_url ? (
         <section
-          className="relative flex items-center justify-center px-4 py-16 text-center"
+          className="relative flex items-center justify-center px-4 py-20 text-center"
           style={{
             backgroundImage: `url(${settings.header_banner_url})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         >
-          <div className="absolute inset-0 bg-foreground/50" />
+          <div className="absolute inset-0 bg-foreground/60 backdrop-blur-[2px]" />
           <div className="relative z-10 container mx-auto max-w-4xl">
-            <h1 className="mb-2 font-serif text-4xl font-bold text-white">{headerTitle}</h1>
-            <p className="text-white/80">{headerSubtitle}</p>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+              className="mb-3 font-serif text-4xl font-bold text-white md:text-5xl tracking-tight"
+            >
+              {headerTitle}
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}
+              className="text-white/70 text-lg"
+            >
+              {headerSubtitle}
+            </motion.p>
           </div>
         </section>
       ) : (
         <section
-          className="px-4 py-16 text-center"
-          style={{ backgroundColor: `hsl(${settings?.header_color || "220 60% 22%"})` }}
+          className="relative px-4 py-20 text-center overflow-hidden"
+          style={{ backgroundColor: `hsl(${settings?.header_color || "222 47% 18%"})` }}
         >
-          <div className="container mx-auto max-w-4xl">
-            <h1 className="mb-2 font-serif text-4xl font-bold text-white">{headerTitle}</h1>
-            <p className="text-white/80">{headerSubtitle}</p>
+          <div className="absolute inset-0 opacity-[0.06]">
+            <div className="absolute top-0 right-0 h-72 w-72 rounded-full bg-white blur-[100px]" />
+            <div className="absolute bottom-0 left-1/4 h-48 w-48 rounded-full bg-white blur-[80px]" />
+          </div>
+          <div className="container relative mx-auto max-w-4xl">
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+              className="mb-3 font-serif text-4xl font-bold text-white md:text-5xl tracking-tight"
+            >
+              {headerTitle}
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}
+              className="text-white/60 text-lg"
+            >
+              {headerSubtitle}
+            </motion.p>
           </div>
         </section>
       )}
