@@ -477,12 +477,12 @@ export default function EventsListPage() {
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-border bg-card px-4 py-6">
+      <footer className="border-t border-border/60 bg-card px-4 py-8">
         <div className="container mx-auto max-w-4xl flex flex-col items-center justify-between gap-3 sm:flex-row">
           <p className="text-sm text-muted-foreground">{footerText}</p>
           <Link
             to="/admin/login"
-            className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
           >
             Administrativo
           </Link>
