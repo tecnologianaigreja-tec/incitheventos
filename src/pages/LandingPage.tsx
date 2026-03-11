@@ -81,6 +81,10 @@ export default function LandingPage() {
   const dateStr = startDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const endDateStr = endDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const isClosed = event.status === "closed" || (event.status as string) === "concluded";
+  const showRemainingSpots = !!(event as any).show_remaining_spots && !!event.max_participants;
+  const remainingSpots = event.max_participants ? Math.max(0, event.max_participants - registrationCount) : null;
+  const isFull = showRemainingSpots && remainingSpots === 0;
+  const isDisabled = isClosed || isFull;
 
   const audienceItems: TargetAudienceItem[] = Array.isArray(event.target_audience) && event.target_audience.length > 0
     ? event.target_audience : [];
