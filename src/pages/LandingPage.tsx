@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { EventData } from "@/lib/types";
+import type { EventData, TargetAudienceItem } from "@/lib/types";
 import { formatCentsToBRL } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar, MapPin, Clock, Users, BookOpen, Award, Shield, ChevronRight } from "lucide-react";
+import { Calendar, MapPin, Clock, Users, BookOpen, Award, Shield, ChevronRight, Star } from "lucide-react";
 import { motion } from "framer-motion";
 
 const fadeUp = {
@@ -16,6 +16,10 @@ const fadeUp = {
 
 const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
+};
+
+const iconMap: Record<string, React.ComponentType<any>> = {
+  Users, BookOpen, Shield, Award, Calendar, MapPin, Clock, Star,
 };
 
 export default function LandingPage() {
@@ -62,13 +66,52 @@ export default function LandingPage() {
   const endDateStr = endDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const isClosed = event.status === "closed";
 
+  const audienceItems: TargetAudienceItem[] = Array.isArray(event.target_audience) && event.target_audience.length > 0
+    ? event.target_audience
+    : [
+      { icon: "Users", title: "Líderes e Pastores", description: "Fortaleça sua base teológica e aprenda a responder questionamentos com clareza e compaixão." },
+      { icon: "BookOpen", title: "Estudantes e Curiosos", description: "Explore as evidências históricas e filosóficas que sustentam a fé cristã ao longo dos séculos." },
+      { icon: "Shield", title: "Toda a Igreja", description: "Qualquer cristão que deseja aprofundar sua fé e estar preparado para dar razão de sua esperança." },
+    ];
+
+  const includes = Array.isArray(event.includes_items) && event.includes_items.length > 0
+    ? event.includes_items
+    : [
+      "Acesso a todas as palestras e painéis",
+      "Material de apoio digital",
+      "Certificado de participação",
+      `${event.workload_hours || 8} horas de conteúdo`,
+      "Coffee break",
+      "Networking com palestrantes",
+    ];
+
+  const faqs = Array.isArray(event.faq_items) && event.faq_items.length > 0
+    ? event.faq_items
+    : [
+      { question: "Posso me inscrever em grupo?", answer: "Sim! Oferecemos inscrição em lote de 2 a 10 pessoas com um único pagamento." },
+      { question: "Como funciona o pagamento?", answer: "Após preencher o formulário, você será redirecionado ao checkout seguro." },
+      { question: "Receberei certificado?", answer: "Sim. Após o evento, participantes com presença confirmada receberão certificado digital." },
+      { question: "Posso cancelar minha inscrição?", answer: "Consulte a política de cancelamento com a organização do evento." },
+      { question: "Preciso levar algo no dia?", answer: "Apenas um documento com foto e o QR Code de check-in." },
+    ];
+
+  const hasBanner = !!event.banner_url;
+
   return (
     <div className="min-h-screen bg-background">
       {/* HERO */}
       <section className="relative overflow-hidden bg-primary px-4 py-24 text-primary-foreground md:py-32">
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,hsl(32,80%,50%,0.3),transparent_70%)]" />
-        </div>
+        {hasBanner && (
+          <div className="absolute inset-0">
+            <img src={event.banner_url!} alt="" className="h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-primary/75" />
+          </div>
+        )}
+        {!hasBanner && (
+          <div className="absolute inset-0 opacity-10">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,hsl(32,80%,50%,0.3),transparent_70%)]" />
+          </div>
+        )}
         <motion.div
           className="container relative mx-auto max-w-4xl text-center"
           initial="hidden"
@@ -76,7 +119,7 @@ export default function LandingPage() {
           variants={stagger}
         >
           <motion.p variants={fadeUp} className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-accent">
-            Conferência 2026
+            {event.hero_badge || event.title}
           </motion.p>
           <motion.h1 variants={fadeUp} className="mb-6 font-serif text-4xl font-bold leading-tight md:text-6xl lg:text-7xl">
             {event.title}
@@ -94,7 +137,7 @@ export default function LandingPage() {
             {event.location_name && (
               <span className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" />
-                {event.location_name}, {event.city}/{event.state}
+                {event.location_name}{event.city ? `, ${event.city}` : ""}{event.state ? `/${event.state}` : ""}
               </span>
             )}
             {event.start_time && (
@@ -124,131 +167,98 @@ export default function LandingPage() {
       <section className="px-4 py-20">
         <motion.div
           className="container mx-auto max-w-3xl text-center"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={stagger}
+          initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}
         >
           <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold text-foreground md:text-4xl">
-            Sobre a Conferência
+            {event.about_title || "Sobre o Evento"}
           </motion.h2>
           <motion.p variants={fadeUp} className="text-lg leading-relaxed text-muted-foreground">
-            {event.description || "Uma conferência dedicada ao estudo profundo e respeitoso das razões da fé cristã. Junte-se a nós para explorar os fundamentos intelectuais, históricos e filosóficos do cristianismo com palestrantes renomados e em um ambiente acolhedor."}
+            {event.about_description || event.description || "Uma conferência dedicada ao estudo profundo e respeitoso das razões da fé cristã."}
           </motion.p>
         </motion.div>
       </section>
 
       {/* FOR WHOM */}
-      <section className="bg-secondary/50 px-4 py-20">
-        <motion.div
-          className="container mx-auto max-w-5xl"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={stagger}
-        >
-          <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
-            Para Quem é Este Evento
-          </motion.h2>
-          <div className="grid gap-6 md:grid-cols-3">
-            {[
-              { icon: Users, title: "Líderes e Pastores", desc: "Fortaleça sua base teológica e aprenda a responder questionamentos com clareza e compaixão." },
-              { icon: BookOpen, title: "Estudantes e Curiosos", desc: "Explore as evidências históricas e filosóficas que sustentam a fé cristã ao longo dos séculos." },
-              { icon: Shield, title: "Toda a Igreja", desc: "Qualquer cristão que deseja aprofundar sua fé e estar preparado para dar razão de sua esperança." },
-            ].map((item, i) => (
-              <motion.div key={i} variants={fadeUp}>
-                <Card className="h-full border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
-                  <CardContent className="p-8 text-center">
-                    <item.icon className="mx-auto mb-4 h-10 w-10 text-accent" />
-                    <h3 className="mb-3 font-serif text-xl font-semibold text-foreground">{item.title}</h3>
-                    <p className="text-sm text-muted-foreground">{item.desc}</p>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </section>
+      {audienceItems.length > 0 && (
+        <section className="bg-secondary/50 px-4 py-20">
+          <motion.div className="container mx-auto max-w-5xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+            <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
+              Para Quem é Este Evento
+            </motion.h2>
+            <div className="grid gap-6 md:grid-cols-3">
+              {audienceItems.map((item, i) => {
+                const Icon = iconMap[item.icon] || Users;
+                return (
+                  <motion.div key={i} variants={fadeUp}>
+                    <Card className="h-full border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
+                      <CardContent className="p-8 text-center">
+                        <Icon className="mx-auto mb-4 h-10 w-10 text-accent" />
+                        <h3 className="mb-3 font-serif text-xl font-semibold text-foreground">{item.title}</h3>
+                        <p className="text-sm text-muted-foreground">{item.description}</p>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        </section>
+      )}
 
       {/* WHAT'S INCLUDED */}
-      <section className="px-4 py-20">
-        <motion.div
-          className="container mx-auto max-w-4xl"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={stagger}
-        >
-          <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
-            O Que Está Incluso
-          </motion.h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {[
-              "Acesso a todas as palestras e painéis",
-              "Material de apoio digital",
-              "Certificado de participação",
-              `${event.workload_hours || 8} horas de conteúdo`,
-              "Coffee break",
-              "Networking com palestrantes",
-            ].map((item, i) => (
-              <motion.div key={i} variants={fadeUp} className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4">
-                <Award className="h-5 w-5 flex-shrink-0 text-accent" />
-                <span className="text-foreground">{item}</span>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </section>
+      {includes.length > 0 && (
+        <section className="px-4 py-20">
+          <motion.div className="container mx-auto max-w-4xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+            <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
+              O Que Está Incluso
+            </motion.h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {includes.map((item, i) => (
+                <motion.div key={i} variants={fadeUp} className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4">
+                  <Award className="h-5 w-5 flex-shrink-0 text-accent" />
+                  <span className="text-foreground">{item}</span>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        </section>
+      )}
 
       {/* FAQ */}
-      <section className="bg-secondary/50 px-4 py-20">
-        <motion.div
-          className="container mx-auto max-w-3xl"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={stagger}
-        >
-          <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
-            Perguntas Frequentes
-          </motion.h2>
-          <motion.div variants={fadeUp}>
-            <Accordion type="single" collapsible className="space-y-3">
-              {[
-                { q: "Posso me inscrever em grupo?", a: "Sim! Oferecemos inscrição em lote de 2 a 10 pessoas com um único pagamento. Cada participante recebe inscrição, QR Code e certificado individuais." },
-                { q: "Como funciona o pagamento?", a: "Após preencher o formulário, você será redirecionado ao checkout seguro da InfinitePay. Aceitamos diversas formas de pagamento." },
-                { q: "Receberei certificado?", a: "Sim. Após o evento, todo participante com pagamento confirmado e presença registrada via check-in receberá certificado digital individual." },
-                { q: "Posso cancelar minha inscrição?", a: "Consulte a política de cancelamento entrando em contato com a organização do evento." },
-                { q: "Preciso levar algo no dia?", a: "Apenas um documento com foto e o QR Code de check-in que será disponibilizado após a confirmação do pagamento." },
-              ].map((faq, i) => (
-                <AccordionItem key={i} value={`faq-${i}`} className="rounded-lg border border-border/50 bg-card px-6">
-                  <AccordionTrigger className="text-left font-medium text-foreground hover:no-underline">
-                    {faq.q}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">{faq.a}</AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
+      {faqs.length > 0 && (
+        <section className="bg-secondary/50 px-4 py-20">
+          <motion.div className="container mx-auto max-w-3xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+            <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
+              Perguntas Frequentes
+            </motion.h2>
+            <motion.div variants={fadeUp}>
+              <Accordion type="single" collapsible className="space-y-3">
+                {faqs.map((faq, i) => (
+                  <AccordionItem key={i} value={`faq-${i}`} className="rounded-lg border border-border/50 bg-card px-6">
+                    <AccordionTrigger className="text-left font-medium text-foreground hover:no-underline">
+                      {faq.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">{faq.answer}</AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      </section>
+        </section>
+      )}
 
       {/* PRICING */}
       <section className="px-4 py-20">
-        <motion.div
-          className="container mx-auto max-w-lg text-center"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={stagger}
-        >
+        <motion.div className="container mx-auto max-w-lg text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
           <motion.h2 variants={fadeUp} className="mb-4 font-serif text-3xl font-bold text-foreground md:text-4xl">
             Investimento
           </motion.h2>
           <motion.div variants={fadeUp}>
             <Card className="border-2 border-accent/30 bg-card shadow-lg">
               <CardContent className="p-10">
-                <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">Inscrição Individual</p>
+                <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  {event.pricing_label || "Inscrição Individual"}
+                </p>
                 <p className="mb-1 font-serif text-5xl font-bold text-foreground">{formatCentsToBRL(event.unit_price_cents)}</p>
                 <p className="mb-8 text-sm text-muted-foreground">por participante</p>
                 {!isClosed && (
@@ -271,18 +281,12 @@ export default function LandingPage() {
 
       {/* FINAL CTA */}
       <section className="bg-primary px-4 py-20 text-primary-foreground">
-        <motion.div
-          className="container mx-auto max-w-3xl text-center"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-          variants={stagger}
-        >
+        <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
           <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold md:text-4xl">
-            Esteja Preparado Para Dar Razão da Sua Esperança
+            {event.cta_title || "Garanta Sua Vaga"}
           </motion.h2>
           <motion.p variants={fadeUp} className="mb-8 text-lg text-primary-foreground/70">
-            Vagas limitadas. Inscreva-se e faça parte desta conferência transformadora.
+            {event.cta_description || "Vagas limitadas. Inscreva-se e faça parte deste evento transformador."}
           </motion.p>
           {!isClosed && (
             <motion.div variants={fadeUp}>

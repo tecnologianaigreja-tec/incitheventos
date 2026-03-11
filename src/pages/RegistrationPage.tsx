@@ -1,38 +1,210 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { EventData, ParticipantForm } from "@/lib/types";
-import { formatCentsToBRL, MAX_BATCH_SIZE, MIN_BATCH_SIZE } from "@/lib/constants";
-import { validateParticipant, emptyParticipant } from "@/lib/validation";
-import ParticipantFormFields from "@/components/ParticipantFormFields";
+import type { EventData, EventFormField, ParticipantForm } from "@/lib/types";
+import { formatCentsToBRL, MAX_BATCH_SIZE, MIN_BATCH_SIZE, formatCPF, formatPhone } from "@/lib/constants";
+import { isValidCPF, isValidEmail, isValidPhone } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Users, User, Plus, Minus, ArrowLeft, Loader2 } from "lucide-react";
+
+// ─── Dynamic field rendering component ───
+function DynamicField({ field, value, onChange, error }: {
+  field: EventFormField;
+  value: string;
+  onChange: (v: string) => void;
+  error?: string;
+}) {
+  const errorClass = error ? "border-destructive" : "";
+
+  switch (field.field_type) {
+    case "select":
+      return (
+        <div>
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Select value={value} onValueChange={onChange}>
+            <SelectTrigger className={errorClass}>
+              <SelectValue placeholder={field.placeholder || "Selecione"} />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options.map(opt => (
+                <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+    case "date":
+      return (
+        <div>
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Input type="date" value={value} onChange={e => onChange(e.target.value)} className={errorClass} />
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+    case "phone":
+      return (
+        <div>
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Input value={value} onChange={e => onChange(formatPhone(e.target.value))} placeholder={field.placeholder || "(00) 00000-0000"} maxLength={15} className={errorClass} />
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+    case "cpf":
+      return (
+        <div>
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Input value={value} onChange={e => onChange(formatCPF(e.target.value))} placeholder={field.placeholder || "000.000.000-00"} maxLength={14} className={errorClass} />
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+    case "email":
+      return (
+        <div>
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Input type="email" value={value} onChange={e => onChange(e.target.value)} placeholder={field.placeholder || "seu@email.com"} className={errorClass} />
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+    case "textarea":
+      return (
+        <div className="sm:col-span-2">
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Textarea value={value} onChange={e => onChange(e.target.value)} placeholder={field.placeholder || ""} rows={3} className={errorClass} />
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+    default:
+      return (
+        <div>
+          <Label>{field.field_label} {field.is_required && "*"}</Label>
+          <Input value={value} onChange={e => onChange(e.target.value)} placeholder={field.placeholder || ""} className={errorClass} />
+          {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      );
+  }
+}
+
+// ─── Participant form with fixed + dynamic fields ───
+function ParticipantSection({ formData, onChange, errors, customFields, title }: {
+  formData: Record<string, string>;
+  onChange: (data: Record<string, string>) => void;
+  errors: Record<string, string>;
+  customFields: EventFormField[];
+  title: string;
+}) {
+  const update = (key: string, val: string) => onChange({ ...formData, [key]: val });
+
+  return (
+    <div className="space-y-4 rounded-lg border border-border/50 bg-card p-6">
+      <h3 className="font-serif text-lg font-semibold text-foreground">{title}</h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {/* Fixed: Nome completo */}
+        <div className="sm:col-span-2">
+          <Label>Nome completo *</Label>
+          <Input
+            value={formData.full_name || ""}
+            onChange={e => update("full_name", e.target.value)}
+            placeholder="Nome completo"
+            className={errors.full_name ? "border-destructive" : ""}
+          />
+          {errors.full_name && <p className="mt-1 text-xs text-destructive">{errors.full_name}</p>}
+        </div>
+        {/* Fixed: CPF */}
+        <div>
+          <Label>CPF *</Label>
+          <Input
+            value={formData.cpf || ""}
+            onChange={e => update("cpf", formatCPF(e.target.value))}
+            placeholder="000.000.000-00"
+            maxLength={14}
+            className={errors.cpf ? "border-destructive" : ""}
+          />
+          {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
+        </div>
+        {/* Fixed: E-mail */}
+        <div>
+          <Label>E-mail *</Label>
+          <Input
+            type="email"
+            value={formData.email || ""}
+            onChange={e => update("email", e.target.value)}
+            placeholder="seu@email.com"
+            className={errors.email ? "border-destructive" : ""}
+          />
+          {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+        </div>
+        {/* Dynamic fields */}
+        {customFields.map(field => (
+          <DynamicField
+            key={field.id}
+            field={field}
+            value={formData[field.field_key] || ""}
+            onChange={v => update(field.field_key, v)}
+            error={errors[field.field_key]}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Validation ───
+function validateForm(data: Record<string, string>, customFields: EventFormField[]): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!data.full_name?.trim()) errors.full_name = "Nome obrigatório";
+  if (!data.cpf?.trim()) errors.cpf = "CPF obrigatório";
+  else if (!isValidCPF(data.cpf)) errors.cpf = "CPF inválido";
+  if (!data.email?.trim()) errors.email = "E-mail obrigatório";
+  else if (!isValidEmail(data.email)) errors.email = "E-mail inválido";
+
+  for (const field of customFields) {
+    if (!field.is_required) continue;
+    const val = data[field.field_key]?.trim() || "";
+    if (!val) {
+      errors[field.field_key] = `${field.field_label} é obrigatório`;
+      continue;
+    }
+    if (field.field_type === "phone" && !isValidPhone(val)) errors[field.field_key] = "Telefone inválido";
+    if (field.field_type === "cpf" && !isValidCPF(val)) errors[field.field_key] = "CPF inválido";
+    if (field.field_type === "email" && !isValidEmail(val)) errors[field.field_key] = "E-mail inválido";
+  }
+  return errors;
+}
+
+function emptyForm(): Record<string, string> {
+  return { full_name: "", cpf: "", email: "" };
+}
 
 export default function RegistrationPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [event, setEvent] = useState<EventData | null>(null);
+  const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [tab, setTab] = useState<"individual" | "batch">("individual");
 
   // Individual form
-  const [individual, setIndividual] = useState<ParticipantForm>(emptyParticipant());
+  const [individual, setIndividual] = useState<Record<string, string>>(emptyForm());
   const [individualErrors, setIndividualErrors] = useState<Record<string, string>>({});
   const [consentTerms, setConsentTerms] = useState(false);
   const [consentData, setConsentData] = useState(false);
 
   // Batch form
-  const [buyer, setBuyer] = useState<ParticipantForm>(emptyParticipant());
+  const [buyer, setBuyer] = useState<Record<string, string>>(emptyForm());
   const [buyerErrors, setBuyerErrors] = useState<Record<string, string>>({});
   const [buyerIsParticipant, setBuyerIsParticipant] = useState(true);
-  const [participants, setParticipants] = useState<ParticipantForm[]>([emptyParticipant(), emptyParticipant()]);
+  const [participants, setParticipants] = useState<Record<string, string>[]>([emptyForm(), emptyForm()]);
   const [participantErrors, setParticipantErrors] = useState<Record<string, string>[]>([]);
   const [batchConsentTerms, setBatchConsentTerms] = useState(false);
   const [batchConsentData, setBatchConsentData] = useState(false);
@@ -40,13 +212,23 @@ export default function RegistrationPage() {
   useEffect(() => {
     async function load() {
       if (!slug) return;
-      const { data } = await supabase
+      const { data: ev } = await supabase
         .from("events")
         .select("*")
         .eq("slug", slug)
         .eq("status", "published")
         .single();
-      if (data) setEvent(data as unknown as EventData);
+      if (ev) {
+        setEvent(ev as unknown as EventData);
+        // Load custom form fields
+        const { data: ff } = await supabase
+          .from("event_form_fields")
+          .select("*")
+          .eq("event_id", ev.id)
+          .eq("is_active", true)
+          .order("sort_order");
+        if (ff) setCustomFields(ff as unknown as EventFormField[]);
+      }
       setLoading(false);
     }
     load();
@@ -54,19 +236,13 @@ export default function RegistrationPage() {
 
   const addParticipant = () => {
     const currentCount = buyerIsParticipant ? participants.length + 1 : participants.length;
-    if (currentCount >= MAX_BATCH_SIZE) {
-      toast.error(`Máximo de ${MAX_BATCH_SIZE} participantes por lote`);
-      return;
-    }
-    setParticipants([...participants, emptyParticipant()]);
+    if (currentCount >= MAX_BATCH_SIZE) { toast.error(`Máximo de ${MAX_BATCH_SIZE} participantes por lote`); return; }
+    setParticipants([...participants, emptyForm()]);
   };
 
   const removeParticipant = (i: number) => {
     const currentCount = buyerIsParticipant ? participants.length + 1 : participants.length;
-    if (currentCount <= MIN_BATCH_SIZE) {
-      toast.error(`Mínimo de ${MIN_BATCH_SIZE} participantes por lote`);
-      return;
-    }
+    if (currentCount <= MIN_BATCH_SIZE) { toast.error(`Mínimo de ${MIN_BATCH_SIZE} participantes por lote`); return; }
     setParticipants(participants.filter((_, idx) => idx !== i));
   };
 
@@ -76,29 +252,33 @@ export default function RegistrationPage() {
 
   const totalCents = event ? participantCount * event.unit_price_cents : 0;
 
+  // Convert Record<string, string> to ParticipantForm-like object for the backend
+  function toParticipant(data: Record<string, string>): Record<string, string> {
+    return { ...data };
+  }
+
   async function handleSubmit() {
     if (!event) return;
     if (submitting) return;
 
     if (tab === "individual") {
-      const errs = validateParticipant(individual);
+      const errs = validateForm(individual, customFields);
       setIndividualErrors(errs);
       if (Object.keys(errs).length > 0) { toast.error("Corrija os campos em destaque"); return; }
       if (!consentTerms || !consentData) { toast.error("Aceite os termos para continuar"); return; }
     } else {
-      const bErrs = validateParticipant(buyer);
+      const bErrs = validateForm(buyer, customFields);
       setBuyerErrors(bErrs);
-      const pErrs = participants.map(validateParticipant);
+      const pErrs = participants.map(p => validateForm(p, customFields));
       setParticipantErrors(pErrs);
       const hasErrors = Object.keys(bErrs).length > 0 || pErrs.some(e => Object.keys(e).length > 0);
       if (hasErrors) { toast.error("Corrija os campos em destaque"); return; }
       if (!batchConsentTerms || !batchConsentData) { toast.error("Aceite os termos para continuar"); return; }
 
-      // Check duplicates
       const allPeople = buyerIsParticipant ? [buyer, ...participants] : participants;
       const seen = new Set<string>();
       for (const p of allPeople) {
-        const key = `${p.full_name.toLowerCase().trim()}|${p.email.toLowerCase().trim()}`;
+        const key = `${(p.full_name || "").toLowerCase().trim()}|${(p.email || "").toLowerCase().trim()}`;
         if (seen.has(key)) { toast.error("Existem participantes duplicados no lote"); return; }
         seen.add(key);
       }
@@ -114,17 +294,19 @@ export default function RegistrationPage() {
         ? {
             event_id: event.id,
             purchase_type: "individual" as const,
-            buyer: individual,
-            participants: [individual],
+            buyer: toParticipant(individual),
+            participants: [toParticipant(individual)],
             consent_terms: consentTerms,
             consent_data_usage: consentData,
           }
         : {
             event_id: event.id,
             purchase_type: "batch" as const,
-            buyer,
+            buyer: toParticipant(buyer),
             buyer_is_participant: buyerIsParticipant,
-            participants: buyerIsParticipant ? [buyer, ...participants] : participants,
+            participants: buyerIsParticipant
+              ? [toParticipant(buyer), ...participants.map(toParticipant)]
+              : participants.map(toParticipant),
             consent_terms: batchConsentTerms,
             consent_data_usage: batchConsentData,
           };
@@ -147,15 +329,13 @@ export default function RegistrationPage() {
         return;
       }
 
-      // Navigate to payment status page with order code
       if (result.payment_link) {
-        // Save order code in sessionStorage for return
         sessionStorage.setItem("last_order_code", result.order_code);
         window.location.href = result.payment_link;
       } else {
         navigate(`/pedido/${result.order_code}`);
       }
-    } catch (err) {
+    } catch {
       toast.error("Erro de conexão. Tente novamente.");
       setSubmitting(false);
     }
@@ -181,7 +361,6 @@ export default function RegistrationPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <div className="border-b border-border bg-card px-4 py-6">
         <div className="container mx-auto max-w-3xl">
           <button onClick={() => navigate(`/`)} className="mb-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -195,18 +374,18 @@ export default function RegistrationPage() {
       <div className="container mx-auto max-w-3xl px-4 py-8">
         <Tabs value={tab} onValueChange={(v) => setTab(v as "individual" | "batch")} className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="individual" className="gap-2">
-              <User className="h-4 w-4" /> Individual
-            </TabsTrigger>
-            <TabsTrigger value="batch" className="gap-2">
-              <Users className="h-4 w-4" /> Em Lote
-            </TabsTrigger>
+            <TabsTrigger value="individual" className="gap-2"><User className="h-4 w-4" /> Individual</TabsTrigger>
+            <TabsTrigger value="batch" className="gap-2"><Users className="h-4 w-4" /> Em Lote</TabsTrigger>
           </TabsList>
 
-          {/* INDIVIDUAL */}
           <TabsContent value="individual" className="space-y-6">
-            <ParticipantFormFields value={individual} onChange={setIndividual} errors={individualErrors} label="Seus Dados" />
-
+            <ParticipantSection
+              formData={individual}
+              onChange={setIndividual}
+              errors={individualErrors}
+              customFields={customFields}
+              title="Seus Dados"
+            />
             <div className="space-y-3">
               <div className="flex items-start gap-3">
                 <Checkbox id="consent_terms" checked={consentTerms} onCheckedChange={(c) => setConsentTerms(!!c)} />
@@ -223,17 +402,20 @@ export default function RegistrationPage() {
             </div>
           </TabsContent>
 
-          {/* BATCH */}
           <TabsContent value="batch" className="space-y-6">
-            <ParticipantFormFields value={buyer} onChange={setBuyer} errors={buyerErrors} label="Responsável pela Compra" />
-
+            <ParticipantSection
+              formData={buyer}
+              onChange={setBuyer}
+              errors={buyerErrors}
+              customFields={customFields}
+              title="Responsável pela Compra"
+            />
             <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4">
               <Switch checked={buyerIsParticipant} onCheckedChange={setBuyerIsParticipant} id="buyer_participates" />
               <Label htmlFor="buyer_participates" className="text-sm text-foreground">
                 O responsável também participará do evento
               </Label>
             </div>
-
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-serif text-lg font-semibold text-foreground">
@@ -245,15 +427,12 @@ export default function RegistrationPage() {
               </div>
               {participants.map((p, i) => (
                 <div key={i} className="relative">
-                  <ParticipantFormFields
-                    value={p}
-                    onChange={(v) => {
-                      const updated = [...participants];
-                      updated[i] = v;
-                      setParticipants(updated);
-                    }}
-                    index={i}
+                  <ParticipantSection
+                    formData={p}
+                    onChange={v => { const u = [...participants]; u[i] = v; setParticipants(u); }}
                     errors={participantErrors[i] || {}}
+                    customFields={customFields}
+                    title={`Participante ${i + 1}`}
                   />
                   {participants.length > 1 && (
                     <button
@@ -267,7 +446,6 @@ export default function RegistrationPage() {
                 </div>
               ))}
             </div>
-
             <div className="space-y-3">
               <div className="flex items-start gap-3">
                 <Checkbox id="batch_consent_terms" checked={batchConsentTerms} onCheckedChange={(c) => setBatchConsentTerms(!!c)} />
@@ -285,11 +463,8 @@ export default function RegistrationPage() {
           </TabsContent>
         </Tabs>
 
-        {/* SUMMARY */}
         <Card className="mt-8 border-2 border-accent/20">
-          <CardHeader>
-            <CardTitle className="font-serif text-xl">Resumo</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="font-serif text-xl">Resumo</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Participantes</span>
