@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle, X } from "lucide-react";
+import { Search, CheckCircle } from "lucide-react";
+import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFilter } from "@/components/DynamicFieldFilters";
 
 export default function AdminRegistrations() {
   const [registrations, setRegistrations] = useState<RegistrationData[]>([]);
@@ -17,6 +18,7 @@ export default function AdminRegistrations() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
+  const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
 
   async function load() {
     const { data } = await supabase.from("registrations").select("*").order("created_at", { ascending: false });
@@ -72,30 +74,19 @@ export default function AdminRegistrations() {
     load();
   }
 
-  const getFieldValue = (reg: RegistrationData, fieldKey: string): string => {
-    const knownMap: Record<string, keyof RegistrationData> = {
-      phone: "phone", telefone: "phone",
-      birth_date: "birth_date", data_nascimento: "birth_date",
-      congregation: "congregation", congregacao: "congregation",
-      area: "area",
-      church_role: "church_role", funcao_eclesiastica: "church_role",
-      church_function: "church_function", cargo_igreja: "church_function",
-    };
-    if (knownMap[fieldKey]) return (reg[knownMap[fieldKey]] as string) || "—";
-    return (reg as any)[fieldKey] || "—";
-  };
-
-  const filtered = registrations.filter(r => {
-    const matchSearch = !search || r.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      r.email.toLowerCase().includes(search.toLowerCase()) ||
-      r.registration_code.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || r.registration_status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const filtered = applyDynamicFilters(
+    registrations.filter(r => {
+      const matchSearch = !search || r.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        r.email.toLowerCase().includes(search.toLowerCase()) ||
+        r.registration_code.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === "all" || r.registration_status === statusFilter;
+      return matchSearch && matchStatus;
+    }),
+    dynamicFilters
+  );
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
-  // Fixed fields for the detail card
   const fixedDetails: { label: string; getValue: (r: RegistrationData) => string }[] = [
     { label: "Nome completo", getValue: r => r.full_name },
     { label: "E-mail", getValue: r => r.email },
@@ -115,7 +106,10 @@ export default function AdminRegistrations() {
 
   return (
     <div className="space-y-6">
-      <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
+        <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+      </div>
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <div className="relative flex-1">
@@ -132,6 +126,15 @@ export default function AdminRegistrations() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Dynamic field filters */}
+      {customFields.length > 0 && (
+        <DynamicFieldFilters
+          customFields={customFields}
+          activeFilters={dynamicFilters}
+          onFiltersChange={setDynamicFilters}
+        />
+      )}
 
       <div className="rounded-lg border border-border overflow-x-auto">
         <Table>
@@ -206,10 +209,9 @@ export default function AdminRegistrations() {
                   </div>
                 );
               })}
-              {/* Dynamic custom fields */}
               {customFields.map(f => {
                 const val = getFieldValue(selectedReg, f.field_key);
-                if (val === "—") return null;
+                if (!val) return null;
                 return (
                   <div key={f.field_key} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
                     <span className="text-sm font-medium text-muted-foreground">{f.field_label}</span>
