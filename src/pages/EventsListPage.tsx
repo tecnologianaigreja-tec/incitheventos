@@ -381,14 +381,35 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {!selectedReg.qr_token && (
-                          <p className="text-center text-sm text-amber-600">
-                            O QR Code será gerado após a confirmação do pagamento.
-                          </p>
+                        {!selectedReg.qr_token && selectedReg.payment_status !== "approved" && (
+                          <div className="flex flex-col items-center gap-3 pt-2">
+                            <p className="text-center text-sm text-amber-600">
+                              O QR Code será gerado após a confirmação do pagamento.
+                            </p>
+                            <Button
+                              className="gap-2 gradient-gold text-white shadow-gold hover:opacity-90"
+                              onClick={async () => {
+                                // Fetch order payment link
+                                const { data: order } = await supabase
+                                  .from("orders")
+                                  .select("payment_link, order_code")
+                                  .eq("id", selectedReg.order_id)
+                                  .single();
+                                if (order?.payment_link) {
+                                  window.location.href = order.payment_link;
+                                } else {
+                                  // Redirect to registration page to create new checkout
+                                  navigate(`/evento/${(selectedReg.events as any).slug}/inscricao`);
+                                }
+                              }}
+                            >
+                              <CreditCard className="h-4 w-4" /> Efetuar pagamento
+                            </Button>
+                          </div>
                         )}
 
                         {/* Download button */}
-                        <div className="flex justify-center pt-2">
+                        <div className="flex justify-center gap-3 pt-2">
                           <Button
                             variant="outline"
                             className="gap-2"
