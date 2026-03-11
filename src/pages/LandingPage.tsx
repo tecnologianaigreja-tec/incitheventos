@@ -285,95 +285,84 @@ export default function LandingPage() {
           </section>
         );
 
-        if (sectionId === "cta" || (sectionId !== "about" && sectionId !== "audience" && sectionId !== "includes" && sectionId !== "poster" && sectionId !== "faq" && false)) return null;
-        // Always render CTA at the end regardless of sectionsOrder
+        if (sectionId === "cta") return null; // rendered below outside the map
         return null;
       })}
 
-      {/* PRICING & CTA - always rendered */}
-      {(() => {
-        const _unused = null; // pricing/CTA block
-        return (
-          <div key="cta">
-            {/* PRICING */}
-            <section className="px-4 py-20">
-              <motion.div className="container mx-auto max-w-lg text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-                <motion.h2 variants={fadeUp} className="mb-4 font-serif text-3xl font-bold text-foreground md:text-4xl">
-                  Investimento
-                </motion.h2>
-                <motion.div variants={fadeUp}>
-                  <Card className="border-2 bg-card shadow-premium-xl" style={{ borderColor: `hsl(${template.colors.accent} / 0.2)` }}>
-                    <CardContent className="p-12">
-                      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                        {event.pricing_label || "Inscrição Individual"}
-                      </p>
-                      <p className="mb-1 font-serif text-6xl font-bold text-foreground tracking-tight">{formatCentsToBRL(event.unit_price_cents)}</p>
-                      <p className="mb-6 text-sm text-muted-foreground">por participante</p>
-                      {showRemainingSpots && remainingSpots !== null && (
-                        <p className={`mb-6 text-sm font-semibold ${isFull ? "text-destructive" : "text-accent"}`}>
-                          {isFull ? "Vagas esgotadas" : `${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
-                        </p>
-                      )}
-                      {!isDisabled && (
-                        <Button
-                          size="lg"
-                          className="w-full py-7 text-lg font-semibold rounded-xl shadow-lg hover:scale-[1.01] transition-transform"
-                          style={{
-                            backgroundColor: `hsl(${template.colors.accent})`,
-                            color: `hsl(${template.colors.accentForeground})`,
-                          }}
-                          onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
-                        >
-                          Garantir minha vaga
-                        </Button>
-                      )}
-                      {isDisabled && (
-                        <p className="text-lg font-medium text-muted-foreground">{isFull ? "Vagas esgotadas" : "Inscrições encerradas"}</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                </motion.div>
-                <motion.p variants={fadeUp} className="mt-4 text-sm text-muted-foreground">
-                  Inscrição em lote disponível para grupos de 2 a 10 pessoas
-                </motion.p>
-              </motion.div>
-            </section>
+      {/* PRICING - always rendered */}
+      <section className="px-4 py-20">
+        <motion.div className="container mx-auto max-w-lg text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+          <motion.h2 variants={fadeUp} className="mb-4 font-serif text-3xl font-bold text-foreground md:text-4xl">
+            Investimento
+          </motion.h2>
+          <motion.div variants={fadeUp}>
+            <Card className="border-2 bg-card shadow-premium-xl" style={{ borderColor: `hsl(${template.colors.accent} / 0.2)` }}>
+              <CardContent className="p-12">
+                <p className="mb-3 text-sm font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                  {event.pricing_label || "Inscrição Individual"}
+                </p>
+                <p className="mb-1 font-serif text-6xl font-bold text-foreground tracking-tight">{formatCentsToBRL(event.unit_price_cents)}</p>
+                <p className="mb-6 text-sm text-muted-foreground">por participante</p>
+                {showRemainingSpots && remainingSpots !== null && (
+                  <p className={`mb-6 text-sm font-semibold ${isFull ? "text-destructive" : "text-accent"}`}>
+                    {isFull ? "Vagas esgotadas" : `${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
+                  </p>
+                )}
+                {!isDisabled && (
+                  <Button
+                    size="lg"
+                    className="w-full py-7 text-lg font-semibold rounded-xl shadow-lg hover:scale-[1.01] transition-transform"
+                    style={{
+                      backgroundColor: `hsl(${template.colors.accent})`,
+                      color: `hsl(${template.colors.accentForeground})`,
+                    }}
+                    onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
+                  >
+                    Garantir minha vaga
+                  </Button>
+                )}
+                {isDisabled && (
+                  <p className="text-lg font-medium text-muted-foreground">{isFull ? "Vagas esgotadas" : "Inscrições encerradas"}</p>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.p variants={fadeUp} className="mt-4 text-sm text-muted-foreground">
+            Inscrição em lote disponível para grupos de 2 a 10 pessoas
+          </motion.p>
+        </motion.div>
+      </section>
 
-            {/* FINAL CTA */}
-            {hasCta && (
-              <section className="px-4 py-20 text-[hsl(var(--lp-primary-foreground))]" style={{ backgroundColor: `hsl(${template.colors.primary})` }}>
-                <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-                  <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold md:text-4xl">
-                    {event.cta_title}
-                  </motion.h2>
-                  {event.cta_description && (
-                    <motion.p variants={fadeUp} className="mb-8 text-lg opacity-70">
-                      {event.cta_description}
-                    </motion.p>
-                  )}
-                  {!isDisabled && (
-                    <motion.div variants={fadeUp}>
-                      <Button
-                        size="lg"
-                        className="px-10 py-6 text-lg font-semibold shadow-lg"
-                        style={{
-                          backgroundColor: `hsl(${template.colors.accent})`,
-                          color: `hsl(${template.colors.accentForeground})`,
-                        }}
-                        onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
-                      >
-                        Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
-                      </Button>
-                    </motion.div>
-                  )}
-                </motion.div>
-              </section>
+      {/* FINAL CTA */}
+      {hasCta && (
+        <section className="px-4 py-20 text-[hsl(var(--lp-primary-foreground))]" style={{ backgroundColor: `hsl(${template.colors.primary})` }}>
+          <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+            <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold md:text-4xl">
+              {event.cta_title}
+            </motion.h2>
+            {event.cta_description && (
+              <motion.p variants={fadeUp} className="mb-8 text-lg opacity-70 text-justify">
+                {event.cta_description}
+              </motion.p>
             )}
-          </div>
-        );
-
-        return null;
-      })}
+            {!isDisabled && (
+              <motion.div variants={fadeUp}>
+                <Button
+                  size="lg"
+                  className="px-10 py-6 text-lg font-semibold shadow-lg"
+                  style={{
+                    backgroundColor: `hsl(${template.colors.accent})`,
+                    color: `hsl(${template.colors.accentForeground})`,
+                  }}
+                  onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
+                >
+                  Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
+                </Button>
+              </motion.div>
+            )}
+          </motion.div>
+        </section>
+      )}
 
       {/* FOOTER */}
       <footer className="border-t border-border/40 bg-card px-4 py-10">
