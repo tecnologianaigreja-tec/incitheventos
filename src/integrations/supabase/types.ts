@@ -556,7 +556,7 @@ export type Database = {
       certificate_status: "unavailable" | "available" | "issued"
       checkin_action_type: "scan" | "manual"
       checkin_status: "not_checked_in" | "checked_in"
-      event_status: "draft" | "published" | "closed" | "canceled"
+      event_status: "draft" | "published" | "closed" | "canceled" | "concluded"
       payment_status:
         | "pending"
         | "approved"
@@ -701,7 +701,7 @@ export const Constants = {
       certificate_status: ["unavailable", "available", "issued"],
       checkin_action_type: ["scan", "manual"],
       checkin_status: ["not_checked_in", "checked_in"],
-      event_status: ["draft", "published", "closed", "canceled"],
+      event_status: ["draft", "published", "closed", "canceled", "concluded"],
       payment_status: [
         "pending",
         "approved",

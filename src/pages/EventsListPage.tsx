@@ -24,7 +24,7 @@ export default function EventsListPage() {
       const { data } = await supabase
         .from("events")
         .select("*")
-        .in("status", ["published", "closed"])
+        .in("status", ["published"])
         .order("start_date", { ascending: true });
       setEvents((data || []) as unknown as EventData[]);
       setLoading(false);

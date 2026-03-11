@@ -62,9 +62,17 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Validate buyer
+    if (!buyer.full_name?.trim() || !buyer.cpf?.trim()) {
+      return new Response(JSON.stringify({ error: "Nome e CPF do responsável são obrigatórios" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (!isValidCPF(buyer.cpf)) {
+      return new Response(JSON.stringify({ error: "CPF do responsável inválido" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // Validate each participant
     for (const p of participants) {
-      if (!p.full_name?.trim() || !p.email?.trim() || !p.cpf?.trim() || !p.phone?.trim()) {
+      if (!p.full_name?.trim() || !p.email?.trim() || !p.cpf?.trim()) {
         return new Response(JSON.stringify({ error: `Dados incompletos para participante ${p.full_name || "sem nome"}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       if (!isValidEmail(p.email)) {
@@ -75,15 +83,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check duplicates in batch
+    // Check duplicate CPFs within the batch
     if (purchase_type === "batch") {
-      const seen = new Set<string>();
+      const seenCpf = new Set<string>();
       for (const p of participants) {
-        const key = `${p.full_name.toLowerCase().trim()}|${p.email.toLowerCase().trim()}`;
-        if (seen.has(key)) {
-          return new Response(JSON.stringify({ error: "Participantes duplicados no lote" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const cpfClean = p.cpf.replace(/\D/g, "");
+        if (seenCpf.has(cpfClean)) {
+          return new Response(JSON.stringify({ error: `CPF duplicado no lote: ${p.full_name}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        seen.add(key);
+        seenCpf.add(cpfClean);
       }
     }
 
@@ -97,6 +105,20 @@ Deno.serve(async (req) => {
 
     if (!event || eventError) {
       return new Response(JSON.stringify({ error: "Evento não encontrado ou não disponível" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Check CPF uniqueness per event (server-side)
+    const participantCpfs = participants.map((p: any) => p.cpf.replace(/\D/g, ""));
+    const { data: existingRegs } = await supabase
+      .from("registrations")
+      .select("cpf, full_name")
+      .eq("event_id", event_id)
+      .in("cpf", participantCpfs)
+      .in("registration_status", ["pending_payment", "confirmed"]);
+
+    if (existingRegs && existingRegs.length > 0) {
+      const names = existingRegs.map((r: any) => r.full_name).join(", ");
+      return new Response(JSON.stringify({ error: `Já existe inscrição neste evento para: ${names}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const unitPriceCents = event.unit_price_cents;
@@ -115,8 +137,8 @@ Deno.serve(async (req) => {
         order_nsu: orderNsu,
         purchase_type,
         buyer_name: buyer.full_name,
-        buyer_email: buyer.email,
-        buyer_phone: buyer.phone,
+        buyer_email: buyer.email || participants[0]?.email || "",
+        buyer_phone: buyer.phone || null,
         buyer_document: buyer.cpf.replace(/\D/g, ""),
         buyer_is_participant: buyer_is_participant !== false,
         participants_count: participantsCount,

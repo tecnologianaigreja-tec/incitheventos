@@ -36,7 +36,7 @@ export default function LandingPage() {
         .from("events")
         .select("*")
         .eq("slug", slug)
-        .in("status", ["published", "closed"])
+        .in("status", ["published", "closed", "concluded"])
         .single();
       if (data) setEvent(data as unknown as EventData);
       setLoading(false);
@@ -70,7 +70,7 @@ export default function LandingPage() {
   const endDate = new Date(event.end_date + "T00:00:00");
   const dateStr = startDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const endDateStr = endDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
-  const isClosed = event.status === "closed";
+  const isClosed = event.status === "closed" || (event.status as string) === "concluded";
 
   const audienceItems: TargetAudienceItem[] = Array.isArray(event.target_audience) && event.target_audience.length > 0
     ? event.target_audience : [];
