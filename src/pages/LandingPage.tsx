@@ -99,18 +99,19 @@ export default function LandingPage() {
       </div>
       {/* HERO */}
       <section
-        className="relative overflow-hidden px-4 py-24 text-[hsl(var(--lp-primary-foreground))] md:py-32"
+        className="relative overflow-hidden px-4 py-28 text-[hsl(var(--lp-primary-foreground))] md:py-36"
         style={{ backgroundColor: `hsl(${template.colors.primary})` }}
       >
         {hasBanner && (
           <div className="absolute inset-0">
             <img src={event.banner_url!} alt="" className="h-full w-full object-cover" />
-            <div className="absolute inset-0" style={{ backgroundColor: `hsl(${template.colors.primary} / 0.75)` }} />
+            <div className="absolute inset-0" style={{ backgroundColor: `hsl(${template.colors.primary} / 0.78)` }} />
           </div>
         )}
         {!hasBanner && (
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute inset-0" style={{ background: `radial-gradient(circle at 30% 50%, hsl(${template.colors.accent} / 0.3), transparent 70%)` }} />
+          <div className="absolute inset-0">
+            <div className="absolute top-0 right-0 h-[500px] w-[500px] rounded-full opacity-[0.06]" style={{ background: `radial-gradient(circle, hsl(${template.colors.accent}), transparent 70%)` }} />
+            <div className="absolute bottom-0 left-0 h-[400px] w-[400px] rounded-full opacity-[0.04]" style={{ background: `radial-gradient(circle, white, transparent 70%)` }} />
           </div>
         )}
         <motion.div
@@ -120,21 +121,21 @@ export default function LandingPage() {
           {event.hero_badge && (
             <motion.p
               variants={fadeUp}
-              className="mb-4 text-sm font-semibold uppercase tracking-[0.2em]"
+              className="mb-5 inline-block rounded-full border border-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em]"
               style={{ color: `hsl(${template.colors.accent})` }}
             >
               {event.hero_badge}
             </motion.p>
           )}
-          <motion.h1 variants={fadeUp} className="mb-6 font-serif text-4xl font-bold leading-tight md:text-6xl lg:text-7xl">
+          <motion.h1 variants={fadeUp} className="mb-6 font-serif text-4xl font-bold leading-[1.1] tracking-tight md:text-6xl lg:text-7xl">
             {event.title}
           </motion.h1>
           {event.subtitle && (
-            <motion.p variants={fadeUp} className="mb-8 text-lg opacity-80 md:text-xl">
+            <motion.p variants={fadeUp} className="mb-10 text-lg opacity-70 md:text-xl max-w-2xl mx-auto leading-relaxed">
               {event.subtitle}
             </motion.p>
           )}
-          <motion.div variants={fadeUp} className="mb-10 flex flex-wrap items-center justify-center gap-6 text-sm opacity-70">
+          <motion.div variants={fadeUp} className="mb-12 flex flex-wrap items-center justify-center gap-6 text-sm opacity-60">
             <span className="flex items-center gap-2"><Calendar className="h-4 w-4" />{dateStr} — {endDateStr}</span>
             {event.location_name && (
               <span className="flex items-center gap-2">
@@ -152,7 +153,7 @@ export default function LandingPage() {
             {!isClosed ? (
               <Button
                 size="lg"
-                className="px-10 py-6 text-lg font-semibold shadow-lg"
+                className="px-12 py-7 text-lg font-semibold rounded-xl shadow-xl hover:scale-[1.02] transition-transform duration-200"
                 style={{
                   backgroundColor: `hsl(${template.colors.accent})`,
                   color: `hsl(${template.colors.accentForeground})`,
@@ -162,7 +163,7 @@ export default function LandingPage() {
                 Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
               </Button>
             ) : (
-              <p className="text-lg font-medium opacity-60">Inscrições encerradas</p>
+              <p className="text-lg font-medium opacity-50">Inscrições encerradas</p>
             )}
           </motion.div>
         </motion.div>
@@ -194,11 +195,13 @@ export default function LandingPage() {
                   const Icon = iconMap[item.icon] || Users;
                   return (
                     <motion.div key={i} variants={fadeUp}>
-                      <Card className="h-full border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
+                      <Card className="h-full border-border/40 bg-card shadow-premium hover:shadow-premium-lg transition-all duration-300 hover:-translate-y-1">
                         <CardContent className="p-8 text-center">
-                          <Icon className="mx-auto mb-4 h-10 w-10" style={{ color: `hsl(${template.colors.accent})` }} />
-                          <h3 className="mb-3 font-serif text-xl font-semibold text-foreground">{item.title}</h3>
-                          <p className="text-sm text-muted-foreground">{item.description}</p>
+                          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-xl" style={{ backgroundColor: `hsl(${template.colors.accent} / 0.1)` }}>
+                            <Icon className="h-7 w-7" style={{ color: `hsl(${template.colors.accent})` }} />
+                          </div>
+                          <h3 className="mb-3 font-serif text-xl font-semibold text-foreground tracking-tight">{item.title}</h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -275,17 +278,17 @@ export default function LandingPage() {
                   Investimento
                 </motion.h2>
                 <motion.div variants={fadeUp}>
-                  <Card className="border-2 bg-card shadow-lg" style={{ borderColor: `hsl(${template.colors.accent} / 0.3)` }}>
-                    <CardContent className="p-10">
-                      <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  <Card className="border-2 bg-card shadow-premium-xl" style={{ borderColor: `hsl(${template.colors.accent} / 0.2)` }}>
+                    <CardContent className="p-12">
+                      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.15em] text-muted-foreground">
                         {event.pricing_label || "Inscrição Individual"}
                       </p>
-                      <p className="mb-1 font-serif text-5xl font-bold text-foreground">{formatCentsToBRL(event.unit_price_cents)}</p>
-                      <p className="mb-8 text-sm text-muted-foreground">por participante</p>
+                      <p className="mb-1 font-serif text-6xl font-bold text-foreground tracking-tight">{formatCentsToBRL(event.unit_price_cents)}</p>
+                      <p className="mb-10 text-sm text-muted-foreground">por participante</p>
                       {!isClosed && (
                         <Button
                           size="lg"
-                          className="w-full py-6 text-lg font-semibold"
+                          className="w-full py-7 text-lg font-semibold rounded-xl shadow-lg hover:scale-[1.01] transition-transform"
                           style={{
                             backgroundColor: `hsl(${template.colors.accent})`,
                             color: `hsl(${template.colors.accentForeground})`,
@@ -341,9 +344,9 @@ export default function LandingPage() {
       })}
 
       {/* FOOTER */}
-      <footer className="border-t border-border bg-card px-4 py-8">
-        <div className="container mx-auto max-w-4xl text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} {event.organizer_name || "Igreja"}. Todos os direitos reservados.</p>
+      <footer className="border-t border-border/40 bg-card px-4 py-10">
+        <div className="container mx-auto max-w-4xl text-center">
+          <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} {event.organizer_name || "Igreja"}. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>

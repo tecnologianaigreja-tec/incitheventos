@@ -218,27 +218,51 @@ export default function EventsListPage() {
       {/* HEADER */}
       {settings?.header_type === "banner" && settings.header_banner_url ? (
         <section
-          className="relative flex items-center justify-center px-4 py-16 text-center"
+          className="relative flex items-center justify-center px-4 py-20 text-center"
           style={{
             backgroundImage: `url(${settings.header_banner_url})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         >
-          <div className="absolute inset-0 bg-foreground/50" />
+          <div className="absolute inset-0 bg-foreground/60 backdrop-blur-[2px]" />
           <div className="relative z-10 container mx-auto max-w-4xl">
-            <h1 className="mb-2 font-serif text-4xl font-bold text-white">{headerTitle}</h1>
-            <p className="text-white/80">{headerSubtitle}</p>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+              className="mb-3 font-serif text-4xl font-bold text-white md:text-5xl tracking-tight"
+            >
+              {headerTitle}
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}
+              className="text-white/70 text-lg"
+            >
+              {headerSubtitle}
+            </motion.p>
           </div>
         </section>
       ) : (
         <section
-          className="px-4 py-16 text-center"
-          style={{ backgroundColor: `hsl(${settings?.header_color || "220 60% 22%"})` }}
+          className="relative px-4 py-20 text-center overflow-hidden"
+          style={{ backgroundColor: `hsl(${settings?.header_color || "222 47% 18%"})` }}
         >
-          <div className="container mx-auto max-w-4xl">
-            <h1 className="mb-2 font-serif text-4xl font-bold text-white">{headerTitle}</h1>
-            <p className="text-white/80">{headerSubtitle}</p>
+          <div className="absolute inset-0 opacity-[0.06]">
+            <div className="absolute top-0 right-0 h-72 w-72 rounded-full bg-white blur-[100px]" />
+            <div className="absolute bottom-0 left-1/4 h-48 w-48 rounded-full bg-white blur-[80px]" />
+          </div>
+          <div className="container relative mx-auto max-w-4xl">
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+              className="mb-3 font-serif text-4xl font-bold text-white md:text-5xl tracking-tight"
+            >
+              {headerTitle}
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}
+              className="text-white/60 text-lg"
+            >
+              {headerSubtitle}
+            </motion.p>
           </div>
         </section>
       )}
@@ -404,37 +428,37 @@ export default function EventsListPage() {
                 return (
                   <motion.div key={ev.id} variants={fadeUp}>
                     <Card
-                      className="cursor-pointer overflow-hidden hover:shadow-lg transition-shadow"
+                      className="group cursor-pointer overflow-hidden border-border/50 bg-card shadow-premium hover:shadow-premium-lg transition-all duration-300"
                       onClick={() => navigate(`/evento/${ev.slug}`)}
                     >
                       <div className="flex flex-col md:flex-row">
                         {ev.banner_url && (
-                          <div className="h-48 md:h-auto md:w-72 flex-shrink-0">
-                            <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover" />
+                          <div className="h-48 md:h-auto md:w-72 flex-shrink-0 overflow-hidden">
+                            <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                           </div>
                         )}
-                        <CardContent className="flex flex-1 flex-col justify-between p-6">
+                        <CardContent className="flex flex-1 flex-col justify-between p-6 lg:p-8">
                           <div>
-                            <h2 className="mb-2 font-serif text-2xl font-bold text-foreground">{ev.title}</h2>
-                            {ev.subtitle && <p className="mb-3 text-muted-foreground">{ev.subtitle}</p>}
+                            <h2 className="mb-2 font-serif text-2xl font-bold text-foreground tracking-tight group-hover:text-accent transition-colors duration-300">{ev.title}</h2>
+                            {ev.subtitle && <p className="mb-4 text-muted-foreground leading-relaxed">{ev.subtitle}</p>}
                             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="h-4 w-4" /> {dateStr}
+                              <span className="flex items-center gap-1.5">
+                                <Calendar className="h-4 w-4 text-accent/70" /> {dateStr}
                               </span>
                               {ev.location_name && (
-                                <span className="flex items-center gap-1">
-                                  <MapPin className="h-4 w-4" /> {ev.location_name}
+                                <span className="flex items-center gap-1.5">
+                                  <MapPin className="h-4 w-4 text-accent/70" /> {ev.location_name}
                                 </span>
                               )}
                             </div>
                           </div>
-                          <div className="mt-4 flex items-center justify-between">
-                            <span className="font-serif text-xl font-bold text-foreground">
+                          <div className="mt-5 flex items-center justify-between pt-4 border-t border-border/40">
+                            <span className="font-serif text-2xl font-bold text-foreground">
                               {formatCentsToBRL(ev.unit_price_cents)}
                             </span>
                             <Button
                               variant={isClosed ? "outline" : "default"}
-                              className="gap-1"
+                              className={`gap-1 ${!isClosed ? "gradient-gold text-white shadow-gold hover:opacity-90" : ""}`}
                               disabled={isClosed}
                             >
                               {isClosed ? "Encerrado" : "Ver detalhes"}
@@ -453,12 +477,12 @@ export default function EventsListPage() {
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-border bg-card px-4 py-6">
+      <footer className="border-t border-border/60 bg-card px-4 py-8">
         <div className="container mx-auto max-w-4xl flex flex-col items-center justify-between gap-3 sm:flex-row">
           <p className="text-sm text-muted-foreground">{footerText}</p>
           <Link
             to="/admin/login"
-            className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
           >
             Administrativo
           </Link>
