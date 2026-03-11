@@ -16,8 +16,10 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const payload = await req.json();
+    console.log("Webhook received payload:", JSON.stringify(payload));
+
     const eventType = payload.event_type || payload.type || payload.status || "unknown";
-    const externalId = payload.id || payload.event_id || payload.transaction_id || null;
+    const externalId = payload.id || payload.event_id || payload.transaction_id || payload.transaction_nsu || null;
     const orderNsu = payload.order_nsu || payload.nsu || payload.metadata?.order_nsu || null;
 
     if (!orderNsu) {
