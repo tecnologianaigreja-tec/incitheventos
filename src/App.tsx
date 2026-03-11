@@ -19,6 +19,7 @@ import AdminRegistrations from "./pages/admin/AdminRegistrations";
 import AdminCheckin from "./pages/admin/AdminCheckin";
 import AdminCertificates from "./pages/admin/AdminCertificates";
 import AdminExport from "./pages/admin/AdminExport";
+import AdminSiteSettings from "./pages/admin/AdminSiteSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
