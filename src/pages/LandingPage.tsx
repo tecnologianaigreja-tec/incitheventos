@@ -195,11 +195,13 @@ export default function LandingPage() {
                   const Icon = iconMap[item.icon] || Users;
                   return (
                     <motion.div key={i} variants={fadeUp}>
-                      <Card className="h-full border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
+                      <Card className="h-full border-border/40 bg-card shadow-premium hover:shadow-premium-lg transition-all duration-300 hover:-translate-y-1">
                         <CardContent className="p-8 text-center">
-                          <Icon className="mx-auto mb-4 h-10 w-10" style={{ color: `hsl(${template.colors.accent})` }} />
-                          <h3 className="mb-3 font-serif text-xl font-semibold text-foreground">{item.title}</h3>
-                          <p className="text-sm text-muted-foreground">{item.description}</p>
+                          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-xl" style={{ backgroundColor: `hsl(${template.colors.accent} / 0.1)` }}>
+                            <Icon className="h-7 w-7" style={{ color: `hsl(${template.colors.accent})` }} />
+                          </div>
+                          <h3 className="mb-3 font-serif text-xl font-semibold text-foreground tracking-tight">{item.title}</h3>
+                          <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
                         </CardContent>
                       </Card>
                     </motion.div>
