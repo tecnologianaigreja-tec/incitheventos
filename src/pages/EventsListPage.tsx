@@ -100,7 +100,7 @@ export default function EventsListPage() {
 
     const { data } = await supabase
       .from("registrations")
-      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, events(title, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
       .eq("cpf", digits)
       .in("registration_status", ["confirmed", "pending_payment"]);
 
