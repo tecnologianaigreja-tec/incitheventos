@@ -5,9 +5,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, ChevronLeft, ChevronRight } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
+
+const PAGE_SIZE = 10;
 
 export default function AdminCheckin() {
   const [scannerActive, setScannerActive] = useState(false);
@@ -15,6 +18,21 @@ export default function AdminCheckin() {
   const [result, setResult] = useState<{ reg: RegistrationData; status: "success" | "already" | "error" | "not_found" | "not_paid" } | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
+
+  // Checked-in list
+  const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
+  const [page, setPage] = useState(1);
+
+  const loadCheckedIn = useCallback(async () => {
+    const { data } = await supabase
+      .from("registrations")
+      .select("*")
+      .eq("checkin_status", "checked_in")
+      .order("checkin_at", { ascending: false });
+    setCheckedIn((data || []) as unknown as RegistrationData[]);
+  }, []);
+
+  useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
 
   const processCheckin = useCallback(async (token: string) => {
     if (processingRef.current) return;
@@ -43,7 +61,7 @@ export default function AdminCheckin() {
 
       if (registration.checkin_status === "checked_in") {
         setResult({ reg: registration, status: "already" });
-        toast.warning("Check-in já realizado");
+        toast.warning("Participante já registrado");
         return;
       }
 
@@ -67,12 +85,13 @@ export default function AdminCheckin() {
         checked_by_user_id: user?.id,
       });
 
-      setResult({ reg: { ...registration, checkin_status: "checked_in" }, status: "success" });
+      setResult({ reg: { ...registration, checkin_status: "checked_in", checkin_at: new Date().toISOString() }, status: "success" });
       toast.success(`Check-in de ${registration.full_name} realizado!`);
+      loadCheckedIn();
     } finally {
       setTimeout(() => { processingRef.current = false; }, 2000);
     }
-  }, []);
+  }, [loadCheckedIn]);
 
   async function handleManualSearch() {
     if (!manualSearch.trim()) return;
@@ -91,11 +110,42 @@ export default function AdminCheckin() {
     }
 
     const registration = data as unknown as RegistrationData;
-    setResult({ reg: registration, status: registration.checkin_status === "checked_in" ? "already" : "success" });
 
-    if (registration.checkin_status !== "checked_in" && registration.payment_status === "approved") {
-      await processCheckin(registration.qr_token || "");
+    if (registration.checkin_status === "checked_in") {
+      setResult({ reg: registration, status: "already" });
+      toast.warning("Participante já registrado");
+      return;
     }
+
+    if (registration.payment_status !== "approved") {
+      setResult({ reg: registration, status: "not_paid" });
+      toast.error("Pagamento não aprovado");
+      return;
+    }
+
+    // Do checkin
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("registrations").update({
+      checkin_status: "checked_in",
+      checkin_at: new Date().toISOString(),
+      checkin_by_user_id: user?.id,
+    }).eq("id", registration.id);
+
+    if (error) {
+      setResult({ reg: registration, status: "error" });
+      toast.error("Erro no check-in");
+      return;
+    }
+
+    await supabase.from("checkin_logs").insert({
+      registration_id: registration.id,
+      action_type: "manual",
+      checked_by_user_id: user?.id,
+    });
+
+    setResult({ reg: { ...registration, checkin_status: "checked_in", checkin_at: new Date().toISOString() }, status: "success" });
+    toast.success(`Check-in de ${registration.full_name} realizado!`);
+    loadCheckedIn();
   }
 
   async function startScanner() {
@@ -105,10 +155,8 @@ export default function AdminCheckin() {
       await scanner.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          processCheckin(decodedText);
-        },
-        () => {} // ignore scan failures
+        (decodedText) => { processCheckin(decodedText); },
+        () => {}
       );
       setScannerActive(true);
     } catch {
@@ -118,17 +166,17 @@ export default function AdminCheckin() {
 
   async function stopScanner() {
     if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-      } catch {}
+      try { await scannerRef.current.stop(); } catch {}
       scannerRef.current = null;
     }
     setScannerActive(false);
   }
 
-  useEffect(() => {
-    return () => { stopScanner(); };
-  }, []);
+  useEffect(() => { return () => { stopScanner(); }; }, []);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(checkedIn.length / PAGE_SIZE));
+  const paged = checkedIn.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -148,13 +196,8 @@ export default function AdminCheckin() {
               {scannerActive ? <><CameraOff className="h-4 w-4" /> Parar Câmera</> : <><Camera className="h-4 w-4" /> Abrir Câmera</>}
             </Button>
           </div>
-          <div
-            id="qr-reader"
-            className={`mx-auto overflow-hidden rounded-lg ${scannerActive ? "w-full max-w-sm" : "hidden"}`}
-          />
-          {scannerActive && (
-            <p className="text-center text-xs text-muted-foreground">Aponte a câmera para o QR Code do participante</p>
-          )}
+          <div id="qr-reader" className={`mx-auto overflow-hidden rounded-lg ${scannerActive ? "w-full max-w-sm" : "hidden"}`} />
+          {scannerActive && <p className="text-center text-xs text-muted-foreground">Aponte a câmera para o QR Code do participante</p>}
         </CardContent>
       </Card>
 
@@ -180,32 +223,29 @@ export default function AdminCheckin() {
       <Card>
         <CardContent className="p-6">
           <p className="mb-3 text-sm font-medium text-foreground">Inserir token do QR Code manualmente:</p>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Cole o token do QR Code aqui"
-              onKeyDown={async (e) => {
-                if (e.key === "Enter") {
-                  await processCheckin((e.target as HTMLInputElement).value);
-                  (e.target as HTMLInputElement).value = "";
-                }
-              }}
-              className="flex-1"
-            />
-          </div>
+          <Input
+            placeholder="Cole o token do QR Code aqui"
+            onKeyDown={async (e) => {
+              if (e.key === "Enter") {
+                await processCheckin((e.target as HTMLInputElement).value);
+                (e.target as HTMLInputElement).value = "";
+              }
+            }}
+          />
         </CardContent>
       </Card>
 
-      {/* Result */}
+      {/* Result feedback */}
       {result && result.reg && (
         <Card className={`border-2 ${
-          result.status === "success" ? "border-success" :
-          result.status === "already" ? "border-warning" :
+          result.status === "success" ? "border-green-500" :
+          result.status === "already" ? "border-yellow-500" :
           "border-destructive"
         }`}>
           <CardContent className="flex items-center gap-6 p-8">
             <div className={`flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full ${
-              result.status === "success" ? "bg-success text-success-foreground" :
-              result.status === "already" ? "bg-warning text-warning-foreground" :
+              result.status === "success" ? "bg-green-500 text-white" :
+              result.status === "already" ? "bg-yellow-500 text-white" :
               "bg-destructive text-destructive-foreground"
             }`}>
               {result.status === "success" ? <CheckCircle className="h-10 w-10" /> :
@@ -214,20 +254,23 @@ export default function AdminCheckin() {
             </div>
             <div>
               <h3 className="text-2xl font-bold text-foreground">{result.reg.full_name}</h3>
-              <p className="text-muted-foreground">{result.reg.congregation}</p>
+              <p className="text-muted-foreground">{result.reg.email}</p>
               <div className="mt-2 flex gap-2">
                 <Badge variant={result.reg.payment_status === "approved" ? "default" : "destructive"}>
                   {result.reg.payment_status === "approved" ? "Pago" : "Não pago"}
                 </Badge>
-                <Badge variant={result.reg.checkin_status === "checked_in" ? "default" : "secondary"}>
-                  {result.reg.checkin_status === "checked_in" ? "Check-in ✓" : "Sem check-in"}
-                </Badge>
               </div>
               {result.status === "success" && (
-                <p className="mt-2 text-sm font-semibold text-success">Check-in realizado com sucesso!</p>
+                <p className="mt-2 text-sm font-semibold text-green-600">Check-in realizado com sucesso!</p>
               )}
               {result.status === "already" && (
-                <p className="mt-2 text-sm font-semibold text-warning">Check-in já havia sido realizado anteriormente.</p>
+                <p className="mt-2 text-sm font-semibold text-yellow-600">
+                  Participante já registrado
+                  {result.reg.checkin_at && ` em ${new Date(result.reg.checkin_at).toLocaleString("pt-BR")}`}
+                </p>
+              )}
+              {result.status === "not_paid" && (
+                <p className="mt-2 text-sm font-semibold text-destructive">Pagamento não aprovado</p>
               )}
             </div>
           </CardContent>
@@ -247,6 +290,73 @@ export default function AdminCheckin() {
           </CardContent>
         </Card>
       )}
+
+      {/* Checked-in list */}
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-serif text-lg font-semibold text-foreground">
+              Participantes com check-in ({checkedIn.length})
+            </h3>
+          </div>
+
+          {checkedIn.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">Nenhum check-in realizado ainda</p>
+          ) : (
+            <>
+              <div className="rounded-lg border border-border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>E-mail</TableHead>
+                      <TableHead>Horário do Check-in</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paged.map((r, i) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-muted-foreground">{(page - 1) * PAGE_SIZE + i + 1}</TableCell>
+                        <TableCell className="font-medium">{r.full_name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.email}</TableCell>
+                        <TableCell className="text-sm">
+                          {r.checkin_at ? new Date(r.checkin_at).toLocaleString("pt-BR") : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage(p => p - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Página {page} de {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
