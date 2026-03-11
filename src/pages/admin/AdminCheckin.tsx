@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { RegistrationData } from "@/lib/types";
+import type { RegistrationData, EventFormField } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
+import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
 
 const PAGE_SIZE = 10;
 
@@ -19,8 +20,11 @@ export default function AdminCheckin() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
 
-  // Checked-in list
+  // Checked-in list + filters
   const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
+  const [customFields, setCustomFields] = useState<EventFormField[]>([]);
+  const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
+  const [searchCheckedIn, setSearchCheckedIn] = useState("");
   const [page, setPage] = useState(1);
 
   const loadCheckedIn = useCallback(async () => {
@@ -29,7 +33,30 @@ export default function AdminCheckin() {
       .select("*")
       .eq("checkin_status", "checked_in")
       .order("checkin_at", { ascending: false });
-    setCheckedIn((data || []) as unknown as RegistrationData[]);
+    const regs = (data || []) as unknown as RegistrationData[];
+    setCheckedIn(regs);
+
+    // Load custom fields for filtering
+    if (regs.length > 0) {
+      const eventIds = [...new Set(regs.map(r => r.event_id))];
+      const { data: fields } = await supabase
+        .from("event_form_fields")
+        .select("*")
+        .in("event_id", eventIds)
+        .eq("is_active", true)
+        .order("sort_order");
+      if (fields) {
+        const seen = new Set<string>();
+        const unique: EventFormField[] = [];
+        for (const f of fields as unknown as EventFormField[]) {
+          if (!seen.has(f.field_key)) {
+            seen.add(f.field_key);
+            unique.push(f);
+          }
+        }
+        setCustomFields(unique);
+      }
+    }
   }, []);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
@@ -123,7 +150,6 @@ export default function AdminCheckin() {
       return;
     }
 
-    // Do checkin
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase.from("registrations").update({
       checkin_status: "checked_in",
@@ -174,13 +200,54 @@ export default function AdminCheckin() {
 
   useEffect(() => { return () => { stopScanner(); }; }, []);
 
+  // Filter checked-in list
+  const filteredCheckedIn = applyDynamicFilters(
+    checkedIn.filter(r => {
+      if (!searchCheckedIn) return true;
+      return r.full_name.toLowerCase().includes(searchCheckedIn.toLowerCase()) ||
+        r.email.toLowerCase().includes(searchCheckedIn.toLowerCase());
+    }),
+    dynamicFilters
+  );
+
   // Pagination
-  const totalPages = Math.max(1, Math.ceil(checkedIn.length / PAGE_SIZE));
-  const paged = checkedIn.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredCheckedIn.length / PAGE_SIZE));
+  const paged = filteredCheckedIn.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1); }, [dynamicFilters, searchCheckedIn]);
 
   return (
     <div className="space-y-6">
       <h2 className="font-serif text-xl font-bold text-foreground">Check-in</h2>
+
+      {/* Presence Counter */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Users className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{checkedIn.length}</p>
+              <p className="text-xs text-muted-foreground">Total presentes</p>
+            </div>
+          </CardContent>
+        </Card>
+        {dynamicFilters.length > 0 && (
+          <Card>
+            <CardContent className="flex items-center gap-4 p-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20">
+                <CheckCircle className="h-6 w-6 text-accent-foreground" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{filteredCheckedIn.length}</p>
+                <p className="text-xs text-muted-foreground">Filtro ativo</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* QR Scanner */}
       <Card>
@@ -291,17 +358,41 @@ export default function AdminCheckin() {
         </Card>
       )}
 
-      {/* Checked-in list */}
+      {/* Checked-in list with filters */}
       <Card>
         <CardContent className="p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-serif text-lg font-semibold text-foreground">
-              Participantes com check-in ({checkedIn.length})
+              Participantes presentes
             </h3>
+            <Badge variant="outline" className="text-sm">
+              {dynamicFilters.length > 0 ? `${filteredCheckedIn.length} de ${checkedIn.length}` : checkedIn.length} presente{checkedIn.length !== 1 ? "s" : ""}
+            </Badge>
           </div>
 
-          {checkedIn.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">Nenhum check-in realizado ainda</p>
+          {/* Search + Dynamic filters for checked-in */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar entre presentes..."
+              value={searchCheckedIn}
+              onChange={e => setSearchCheckedIn(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {customFields.length > 0 && (
+            <DynamicFieldFilters
+              customFields={customFields}
+              activeFilters={dynamicFilters}
+              onFiltersChange={setDynamicFilters}
+            />
+          )}
+
+          {filteredCheckedIn.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">
+              {checkedIn.length === 0 ? "Nenhum check-in realizado ainda" : "Nenhum resultado para os filtros aplicados"}
+            </p>
           ) : (
             <>
               <div className="rounded-lg border border-border overflow-x-auto">
@@ -332,23 +423,11 @@ export default function AdminCheckin() {
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage(p => p - 1)}
-                  >
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <span className="text-sm text-muted-foreground">
-                    Página {page} de {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage(p => p + 1)}
-                  >
+                  <span className="text-sm text-muted-foreground">Página {page} de {totalPages}</span>
+                  <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
