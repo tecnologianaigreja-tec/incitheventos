@@ -168,155 +168,177 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
-      {/* ABOUT — only show if content exists */}
-      {hasAbout && (
-        <section className="px-4 py-20">
-          <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold text-foreground md:text-4xl">
-              {event.about_title || "Sobre o Evento"}
-            </motion.h2>
-            <motion.p variants={fadeUp} className="text-lg leading-relaxed text-muted-foreground">
-              {event.about_description || event.description}
-            </motion.p>
-          </motion.div>
-        </section>
-      )}
-
-      {/* FOR WHOM — only show if items exist */}
-      {audienceItems.length > 0 && (
-        <section className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
-          <motion.div className="container mx-auto max-w-5xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
-              Para Quem é Este Evento
-            </motion.h2>
-            <div className="grid gap-6 md:grid-cols-3">
-              {audienceItems.map((item, i) => {
-                const Icon = iconMap[item.icon] || Users;
-                return (
-                  <motion.div key={i} variants={fadeUp}>
-                    <Card className="h-full border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
-                      <CardContent className="p-8 text-center">
-                        <Icon className="mx-auto mb-4 h-10 w-10" style={{ color: `hsl(${template.colors.accent})` }} />
-                        <h3 className="mb-3 font-serif text-xl font-semibold text-foreground">{item.title}</h3>
-                        <p className="text-sm text-muted-foreground">{item.description}</p>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.div>
-        </section>
-      )}
-
-      {/* WHAT'S INCLUDED — only show if items exist */}
-      {includes.length > 0 && (
-        <section className="px-4 py-20">
-          <motion.div className="container mx-auto max-w-4xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
-              O Que Está Incluso
-            </motion.h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {includes.map((item, i) => (
-                <motion.div key={i} variants={fadeUp} className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4">
-                  <Award className="h-5 w-5 flex-shrink-0" style={{ color: `hsl(${template.colors.accent})` }} />
-                  <span className="text-foreground">{item}</span>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </section>
-      )}
-
-      {/* FAQ — only show if items exist */}
-      {faqs.length > 0 && (
-        <section className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
-          <motion.div className="container mx-auto max-w-3xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
-              Perguntas Frequentes
-            </motion.h2>
-            <motion.div variants={fadeUp}>
-              <Accordion type="single" collapsible className="space-y-3">
-                {faqs.map((faq, i) => (
-                  <AccordionItem key={i} value={`faq-${i}`} className="rounded-lg border border-border/50 bg-card px-6">
-                    <AccordionTrigger className="text-left font-medium text-foreground hover:no-underline">
-                      {faq.question}
-                    </AccordionTrigger>
-                    <AccordionContent className="text-muted-foreground">{faq.answer}</AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </motion.div>
-          </motion.div>
-        </section>
-      )}
-
-      {/* PRICING */}
-      <section className="px-4 py-20">
-        <motion.div className="container mx-auto max-w-lg text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-          <motion.h2 variants={fadeUp} className="mb-4 font-serif text-3xl font-bold text-foreground md:text-4xl">
-            Investimento
-          </motion.h2>
-          <motion.div variants={fadeUp}>
-            <Card className="border-2 bg-card shadow-lg" style={{ borderColor: `hsl(${template.colors.accent} / 0.3)` }}>
-              <CardContent className="p-10">
-                <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                  {event.pricing_label || "Inscrição Individual"}
-                </p>
-                <p className="mb-1 font-serif text-5xl font-bold text-foreground">{formatCentsToBRL(event.unit_price_cents)}</p>
-                <p className="mb-8 text-sm text-muted-foreground">por participante</p>
-                {!isClosed && (
-                  <Button
-                    size="lg"
-                    className="w-full py-6 text-lg font-semibold"
-                    style={{
-                      backgroundColor: `hsl(${template.colors.accent})`,
-                      color: `hsl(${template.colors.accentForeground})`,
-                    }}
-                    onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
-                  >
-                    Garantir minha vaga
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-          <motion.p variants={fadeUp} className="mt-4 text-sm text-muted-foreground">
-            Inscrição em lote disponível para grupos de 2 a 10 pessoas
-          </motion.p>
-        </motion.div>
-      </section>
-
-      {/* FINAL CTA — only if content exists */}
-      {hasCta && (
-        <section className="px-4 py-20 text-[hsl(var(--lp-primary-foreground))]" style={{ backgroundColor: `hsl(${template.colors.primary})` }}>
-          <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold md:text-4xl">
-              {event.cta_title}
-            </motion.h2>
-            {event.cta_description && (
-              <motion.p variants={fadeUp} className="mb-8 text-lg opacity-70">
-                {event.cta_description}
+      {/* DYNAMIC SECTIONS */}
+      {sectionsOrder.map((sectionId) => {
+        if (sectionId === "about" && hasAbout) return (
+          <section key="about" className="px-4 py-20">
+            <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+              <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold text-foreground md:text-4xl">
+                {event.about_title || "Sobre o Evento"}
+              </motion.h2>
+              <motion.p variants={fadeUp} className="text-lg leading-relaxed text-muted-foreground">
+                {event.about_description || event.description}
               </motion.p>
-            )}
-            {!isClosed && (
+            </motion.div>
+          </section>
+        );
+
+        if (sectionId === "audience" && audienceItems.length > 0) return (
+          <section key="audience" className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
+            <motion.div className="container mx-auto max-w-5xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+              <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
+                Para Quem é Este Evento
+              </motion.h2>
+              <div className="grid gap-6 md:grid-cols-3">
+                {audienceItems.map((item, i) => {
+                  const Icon = iconMap[item.icon] || Users;
+                  return (
+                    <motion.div key={i} variants={fadeUp}>
+                      <Card className="h-full border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
+                        <CardContent className="p-8 text-center">
+                          <Icon className="mx-auto mb-4 h-10 w-10" style={{ color: `hsl(${template.colors.accent})` }} />
+                          <h3 className="mb-3 font-serif text-xl font-semibold text-foreground">{item.title}</h3>
+                          <p className="text-sm text-muted-foreground">{item.description}</p>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </section>
+        );
+
+        if (sectionId === "includes" && includes.length > 0) return (
+          <section key="includes" className="px-4 py-20">
+            <motion.div className="container mx-auto max-w-4xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+              <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
+                O Que Está Incluso
+              </motion.h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {includes.map((item, i) => (
+                  <motion.div key={i} variants={fadeUp} className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4">
+                    <Award className="h-5 w-5 flex-shrink-0" style={{ color: `hsl(${template.colors.accent})` }} />
+                    <span className="text-foreground">{item}</span>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </section>
+        );
+
+        if (sectionId === "poster" && hasPoster) return (
+          <section key="poster" className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
+            <motion.div className="container mx-auto max-w-2xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+              <motion.h2 variants={fadeUp} className="mb-8 font-serif text-3xl font-bold text-foreground md:text-4xl">
+                Cartaz do Evento
+              </motion.h2>
               <motion.div variants={fadeUp}>
-                <Button
-                  size="lg"
-                  className="px-10 py-6 text-lg font-semibold shadow-lg"
-                  style={{
-                    backgroundColor: `hsl(${template.colors.accent})`,
-                    color: `hsl(${template.colors.accentForeground})`,
-                  }}
-                  onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
-                >
-                  Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
-                </Button>
+                <img
+                  src={(event as any).poster_url}
+                  alt={`Cartaz - ${event.title}`}
+                  className="mx-auto max-w-full rounded-xl shadow-lg"
+                />
               </motion.div>
+            </motion.div>
+          </section>
+        );
+
+        if (sectionId === "faq" && faqs.length > 0) return (
+          <section key="faq" className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
+            <motion.div className="container mx-auto max-w-3xl" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+              <motion.h2 variants={fadeUp} className="mb-12 text-center font-serif text-3xl font-bold text-foreground md:text-4xl">
+                Perguntas Frequentes
+              </motion.h2>
+              <motion.div variants={fadeUp}>
+                <Accordion type="single" collapsible className="space-y-3">
+                  {faqs.map((faq, i) => (
+                    <AccordionItem key={i} value={`faq-${i}`} className="rounded-lg border border-border/50 bg-card px-6">
+                      <AccordionTrigger className="text-left font-medium text-foreground hover:no-underline">
+                        {faq.question}
+                      </AccordionTrigger>
+                      <AccordionContent className="text-muted-foreground">{faq.answer}</AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </motion.div>
+            </motion.div>
+          </section>
+        );
+
+        if (sectionId === "cta") return (
+          <div key="cta">
+            {/* PRICING */}
+            <section className="px-4 py-20">
+              <motion.div className="container mx-auto max-w-lg text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+                <motion.h2 variants={fadeUp} className="mb-4 font-serif text-3xl font-bold text-foreground md:text-4xl">
+                  Investimento
+                </motion.h2>
+                <motion.div variants={fadeUp}>
+                  <Card className="border-2 bg-card shadow-lg" style={{ borderColor: `hsl(${template.colors.accent} / 0.3)` }}>
+                    <CardContent className="p-10">
+                      <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                        {event.pricing_label || "Inscrição Individual"}
+                      </p>
+                      <p className="mb-1 font-serif text-5xl font-bold text-foreground">{formatCentsToBRL(event.unit_price_cents)}</p>
+                      <p className="mb-8 text-sm text-muted-foreground">por participante</p>
+                      {!isClosed && (
+                        <Button
+                          size="lg"
+                          className="w-full py-6 text-lg font-semibold"
+                          style={{
+                            backgroundColor: `hsl(${template.colors.accent})`,
+                            color: `hsl(${template.colors.accentForeground})`,
+                          }}
+                          onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
+                        >
+                          Garantir minha vaga
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+                <motion.p variants={fadeUp} className="mt-4 text-sm text-muted-foreground">
+                  Inscrição em lote disponível para grupos de 2 a 10 pessoas
+                </motion.p>
+              </motion.div>
+            </section>
+
+            {/* FINAL CTA */}
+            {hasCta && (
+              <section className="px-4 py-20 text-[hsl(var(--lp-primary-foreground))]" style={{ backgroundColor: `hsl(${template.colors.primary})` }}>
+                <motion.div className="container mx-auto max-w-3xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+                  <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold md:text-4xl">
+                    {event.cta_title}
+                  </motion.h2>
+                  {event.cta_description && (
+                    <motion.p variants={fadeUp} className="mb-8 text-lg opacity-70">
+                      {event.cta_description}
+                    </motion.p>
+                  )}
+                  {!isClosed && (
+                    <motion.div variants={fadeUp}>
+                      <Button
+                        size="lg"
+                        className="px-10 py-6 text-lg font-semibold shadow-lg"
+                        style={{
+                          backgroundColor: `hsl(${template.colors.accent})`,
+                          color: `hsl(${template.colors.accentForeground})`,
+                        }}
+                        onClick={() => navigate(`/evento/${event.slug}/inscricao`)}
+                      >
+                        Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
+                      </Button>
+                    </motion.div>
+                  )}
+                </motion.div>
+              </section>
             )}
-          </motion.div>
-        </section>
-      )}
+          </div>
+        );
+
+        return null;
+      })}
 
       {/* FOOTER */}
       <footer className="border-t border-border bg-card px-4 py-8">
