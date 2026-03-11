@@ -108,7 +108,7 @@ export default function EventsListPage() {
 
   async function handleDownloadCredential(reg: RegistrationWithEvent) {
     const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF({ unit: "mm", format: "a5" });
+    const doc = new jsPDF({ unit: "mm", format: [105, 148] });
 
     const pw = doc.internal.pageSize.getWidth();
     let y = 20;
