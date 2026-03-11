@@ -428,37 +428,37 @@ export default function EventsListPage() {
                 return (
                   <motion.div key={ev.id} variants={fadeUp}>
                     <Card
-                      className="cursor-pointer overflow-hidden hover:shadow-lg transition-shadow"
+                      className="group cursor-pointer overflow-hidden border-border/50 bg-card shadow-premium hover:shadow-premium-lg transition-all duration-300"
                       onClick={() => navigate(`/evento/${ev.slug}`)}
                     >
                       <div className="flex flex-col md:flex-row">
                         {ev.banner_url && (
-                          <div className="h-48 md:h-auto md:w-72 flex-shrink-0">
-                            <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover" />
+                          <div className="h-48 md:h-auto md:w-72 flex-shrink-0 overflow-hidden">
+                            <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                           </div>
                         )}
-                        <CardContent className="flex flex-1 flex-col justify-between p-6">
+                        <CardContent className="flex flex-1 flex-col justify-between p-6 lg:p-8">
                           <div>
-                            <h2 className="mb-2 font-serif text-2xl font-bold text-foreground">{ev.title}</h2>
-                            {ev.subtitle && <p className="mb-3 text-muted-foreground">{ev.subtitle}</p>}
+                            <h2 className="mb-2 font-serif text-2xl font-bold text-foreground tracking-tight group-hover:text-accent transition-colors duration-300">{ev.title}</h2>
+                            {ev.subtitle && <p className="mb-4 text-muted-foreground leading-relaxed">{ev.subtitle}</p>}
                             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="h-4 w-4" /> {dateStr}
+                              <span className="flex items-center gap-1.5">
+                                <Calendar className="h-4 w-4 text-accent/70" /> {dateStr}
                               </span>
                               {ev.location_name && (
-                                <span className="flex items-center gap-1">
-                                  <MapPin className="h-4 w-4" /> {ev.location_name}
+                                <span className="flex items-center gap-1.5">
+                                  <MapPin className="h-4 w-4 text-accent/70" /> {ev.location_name}
                                 </span>
                               )}
                             </div>
                           </div>
-                          <div className="mt-4 flex items-center justify-between">
-                            <span className="font-serif text-xl font-bold text-foreground">
+                          <div className="mt-5 flex items-center justify-between pt-4 border-t border-border/40">
+                            <span className="font-serif text-2xl font-bold text-foreground">
                               {formatCentsToBRL(ev.unit_price_cents)}
                             </span>
                             <Button
                               variant={isClosed ? "outline" : "default"}
-                              className="gap-1"
+                              className={`gap-1 ${!isClosed ? "gradient-gold text-white shadow-gold hover:opacity-90" : ""}`}
                               disabled={isClosed}
                             >
                               {isClosed ? "Encerrado" : "Ver detalhes"}
