@@ -1,0 +1,1 @@
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS template TEXT NOT NULL DEFAULT 'classic';

@@ -231,6 +231,7 @@ export type Database = {
           status: Database["public"]["Enums"]["event_status"]
           subtitle: string | null
           target_audience: Json | null
+          template: string
           title: string
           unit_price_cents: number
           updated_at: string
@@ -263,6 +264,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["event_status"]
           subtitle?: string | null
           target_audience?: Json | null
+          template?: string
           title: string
           unit_price_cents?: number
           updated_at?: string
@@ -295,6 +297,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["event_status"]
           subtitle?: string | null
           target_audience?: Json | null
+          template?: string
           title?: string
           unit_price_cents?: number
           updated_at?: string
