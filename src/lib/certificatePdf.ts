@@ -143,7 +143,21 @@ export async function generateCertificatePdf(options: CertificatePdfOptions): Pr
   currentY += textLines.length * 7 + 10;
 
   // Signatures
-  const sigs = options.signatures.filter(s => s.name || s.image_url);
+  const substituteVars = (text: string) => {
+    return text
+      .replace(/\{nome\}/g, options.participantName)
+      .replace(/\{evento\}/g, options.eventTitle)
+      .replace(/\{data_inicio\}/g, options.startDate)
+      .replace(/\{data_fim\}/g, options.endDate)
+      .replace(/\{carga_horaria\}/g, String(options.workloadHours || "—"))
+      .replace(/\{codigo\}/g, options.certificateCode);
+  };
+
+  const sigs = options.signatures.filter(s => s.name || s.image_url).map(s => ({
+    ...s,
+    name: substituteVars(s.name),
+    title: substituteVars(s.title),
+  }));
   if (sigs.length > 0) {
     const sigY = Math.max(currentY + 5, pageH - 60);
     const sigCount = sigs.length;
