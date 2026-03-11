@@ -252,6 +252,7 @@ export default function RegistrationPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [tab, setTab] = useState<"individual" | "batch">("individual");
+  const [registrationCount, setRegistrationCount] = useState(0);
 
   // Individual form
   const [individual, setIndividual] = useState<Record<string, string>>(emptyForm());
