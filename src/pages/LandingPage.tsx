@@ -196,7 +196,7 @@ export default function LandingPage() {
               <motion.h2 variants={fadeUp} className="mb-6 font-serif text-3xl font-bold text-foreground md:text-4xl">
                 {event.about_title || "Sobre o Evento"}
               </motion.h2>
-              <motion.p variants={fadeUp} className="text-lg leading-relaxed text-muted-foreground">
+              <motion.p variants={fadeUp} className="text-lg leading-relaxed text-muted-foreground text-justify">
                 {event.about_description || event.description}
               </motion.p>
             </motion.div>
