@@ -107,18 +107,60 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Evento não encontrado ou não disponível" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Check CPF uniqueness per event (server-side)
+    // Check CPF uniqueness per event — but if pending, resume existing order
     const participantCpfs = participants.map((p: any) => p.cpf.replace(/\D/g, ""));
     const { data: existingRegs } = await supabase
       .from("registrations")
-      .select("cpf, full_name")
+      .select("cpf, full_name, registration_status, order_id")
       .eq("event_id", event_id)
       .in("cpf", participantCpfs)
       .in("registration_status", ["pending_payment", "confirmed"]);
 
     if (existingRegs && existingRegs.length > 0) {
+      // Check if any are already confirmed — block those
+      const confirmed = existingRegs.filter((r: any) => r.registration_status === "confirmed");
+      if (confirmed.length > 0) {
+        const names = confirmed.map((r: any) => r.full_name).join(", ");
+        return new Response(JSON.stringify({ error: `Já existe inscrição confirmada neste evento para: ${names}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // All existing are pending_payment — resume existing order
+      // For individual registration, resume the single pending order
+      if (purchase_type === "individual" && existingRegs.length === 1) {
+        const pendingReg = existingRegs[0];
+        const { data: existingOrder } = await supabase
+          .from("orders")
+          .select("order_code, payment_link, payment_status, total_price_cents, participants_count")
+          .eq("id", pendingReg.order_id)
+          .single();
+
+        if (existingOrder && existingOrder.payment_status === "pending") {
+          let paymentLink = existingOrder.payment_link;
+
+          // If no payment link, generate a new one
+          if (!paymentLink) {
+            paymentLink = await generatePaymentLink(supabase, supabaseUrl, event, existingOrder, participants);
+            if (paymentLink) {
+              await supabase.from("orders").update({ payment_link: paymentLink }).eq("id", pendingReg.order_id);
+            }
+          }
+
+          return new Response(
+            JSON.stringify({
+              order_code: existingOrder.order_code,
+              payment_link: paymentLink,
+              total_price_cents: existingOrder.total_price_cents,
+              participants_count: existingOrder.participants_count,
+              resumed: true,
+            }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
+      // For batch or multiple pending, block with helpful message
       const names = existingRegs.map((r: any) => r.full_name).join(", ");
-      return new Response(JSON.stringify({ error: `Já existe inscrição neste evento para: ${names}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: `Já existe inscrição pendente neste evento para: ${names}. Consulte suas inscrições para retomar o pagamento.` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const unitPriceCents = event.unit_price_cents;
@@ -192,49 +234,8 @@ Deno.serve(async (req) => {
       details: { order_code: orderCode, purchase_type, participants_count: participantsCount, total_price_cents: totalPriceCents },
     });
 
-    // InfinitePay checkout via public endpoint (no API key needed)
-    const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE");
-    const appUrl = Deno.env.get("APP_URL") || "https://incitheventos.lovable.app";
-
-    let paymentLink: string | null = null;
-
-    if (infinitepayHandle) {
-      try {
-        const checkoutPayload = {
-          handle: infinitepayHandle,
-          order_nsu: orderNsu,
-          amount: totalPriceCents,
-          items: participants.map((p: any) => ({
-            description: `Inscrição - ${event.title} - ${p.full_name}`,
-            quantity: 1,
-            price: unitPriceCents,
-          })),
-          redirect_url: `${appUrl}/pedido/${orderCode}?status=redirect`,
-          webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
-        };
-
-        console.log("InfinitePay checkout payload:", JSON.stringify(checkoutPayload));
-
-        const ipRes = await fetch("https://api.infinitepay.io/invoices/public/checkout/links", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(checkoutPayload),
-        });
-
-        const ipData = await ipRes.json();
-        console.log("InfinitePay response:", ipRes.status, JSON.stringify(ipData));
-
-        if (ipRes.ok) {
-          paymentLink = ipData.checkout_url || ipData.url || ipData.link || null;
-        } else {
-          console.error("InfinitePay error response:", ipData);
-        }
-      } catch (err) {
-        console.error("InfinitePay error:", err);
-      }
-    } else {
-      console.warn("INFINITEPAY_HANDLE not configured");
-    }
+    // Generate payment link
+    const paymentLink = await generatePaymentLink(supabase, supabaseUrl, event, { ...order, order_nsu: orderNsu }, participants);
 
     // Update order with payment link if available
     if (paymentLink) {
@@ -265,3 +266,55 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+async function generatePaymentLink(
+  supabase: any,
+  supabaseUrl: string,
+  event: any,
+  order: any,
+  participants: any[]
+): Promise<string | null> {
+  const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE");
+  const appUrl = Deno.env.get("APP_URL") || "https://incitheventos.lovable.app";
+
+  if (!infinitepayHandle) {
+    console.warn("INFINITEPAY_HANDLE not configured");
+    return null;
+  }
+
+  try {
+    const checkoutPayload = {
+      handle: infinitepayHandle,
+      order_nsu: order.order_nsu,
+      amount: order.total_price_cents,
+      items: participants.map((p: any) => ({
+        description: `Inscrição - ${event.title} - ${p.full_name}`,
+        quantity: 1,
+        price: event.unit_price_cents,
+      })),
+      redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
+      webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
+    };
+
+    console.log("InfinitePay checkout payload:", JSON.stringify(checkoutPayload));
+
+    const ipRes = await fetch("https://api.infinitepay.io/invoices/public/checkout/links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(checkoutPayload),
+    });
+
+    const ipData = await ipRes.json();
+    console.log("InfinitePay response:", ipRes.status, JSON.stringify(ipData));
+
+    if (ipRes.ok) {
+      return ipData.checkout_url || ipData.url || ipData.link || null;
+    } else {
+      console.error("InfinitePay error response:", ipData);
+      return null;
+    }
+  } catch (err) {
+    console.error("InfinitePay error:", err);
+    return null;
+  }
+}

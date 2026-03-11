@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download } from "lucide-react";
+import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download, CreditCard } from "lucide-react";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -42,8 +42,10 @@ interface RegistrationWithEvent {
   payment_status: string;
   qr_token: string | null;
   checkin_status: string;
+  order_id: string;
   events: {
     title: string;
+    slug: string;
     start_date: string;
     end_date: string;
     start_time: string | null;
@@ -98,7 +100,7 @@ export default function EventsListPage() {
 
     const { data } = await supabase
       .from("registrations")
-      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, events(title, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
       .eq("cpf", digits)
       .in("registration_status", ["confirmed", "pending_payment"]);
 
@@ -312,12 +314,36 @@ export default function EventsListPage() {
                               <p className="text-sm text-muted-foreground">
                                 {new Date(r.events.start_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
                               </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Código: {r.registration_code} · Status:{" "}
-                                <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                                  {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
-                                </span>
-                              </p>
+                              <div className="mt-1 flex items-center justify-between">
+                                <p className="text-xs text-muted-foreground">
+                                  Código: {r.registration_code} · Status:{" "}
+                                  <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                                    {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                                  </span>
+                                </p>
+                                {r.payment_status !== "approved" && (
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="gap-1 text-xs gradient-gold text-white shadow-gold hover:opacity-90"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const { data: order } = await supabase
+                                        .from("orders")
+                                        .select("payment_link, order_code")
+                                        .eq("id", r.order_id)
+                                        .single();
+                                      if (order?.payment_link) {
+                                        window.location.href = order.payment_link;
+                                      } else {
+                                        navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                      }
+                                    }}
+                                  >
+                                    <CreditCard className="h-3 w-3" /> Pagar
+                                  </Button>
+                                )}
+                              </div>
                             </CardContent>
                           </Card>
                         ))}
@@ -379,14 +405,35 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {!selectedReg.qr_token && (
-                          <p className="text-center text-sm text-amber-600">
-                            O QR Code será gerado após a confirmação do pagamento.
-                          </p>
+                        {!selectedReg.qr_token && selectedReg.payment_status !== "approved" && (
+                          <div className="flex flex-col items-center gap-3 pt-2">
+                            <p className="text-center text-sm text-amber-600">
+                              O QR Code será gerado após a confirmação do pagamento.
+                            </p>
+                            <Button
+                              className="gap-2 gradient-gold text-white shadow-gold hover:opacity-90"
+                              onClick={async () => {
+                                // Fetch order payment link
+                                const { data: order } = await supabase
+                                  .from("orders")
+                                  .select("payment_link, order_code")
+                                  .eq("id", selectedReg.order_id)
+                                  .single();
+                                if (order?.payment_link) {
+                                  window.location.href = order.payment_link;
+                                } else {
+                                  // Redirect to registration page to create new checkout
+                                  navigate(`/evento/${(selectedReg.events as any).slug}/inscricao`);
+                                }
+                              }}
+                            >
+                              <CreditCard className="h-4 w-4" /> Efetuar pagamento
+                            </Button>
+                          </div>
                         )}
 
                         {/* Download button */}
-                        <div className="flex justify-center pt-2">
+                        <div className="flex justify-center gap-3 pt-2">
                           <Button
                             variant="outline"
                             className="gap-2"

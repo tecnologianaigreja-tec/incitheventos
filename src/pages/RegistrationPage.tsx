@@ -354,7 +354,8 @@ export default function RegistrationPage() {
       if (count > MAX_BATCH_SIZE) { toast.error(`Máximo de ${MAX_BATCH_SIZE} participantes`); return; }
     }
 
-    // Check CPF uniqueness against existing registrations for this event
+    // The backend will handle CPF uniqueness — if pending, it resumes the existing order
+    // We only block confirmed duplicates client-side for better UX
     {
       const allParticipants = tab === "individual"
         ? [individual]
@@ -367,11 +368,11 @@ export default function RegistrationPage() {
           .select("cpf, full_name, registration_status")
           .eq("event_id", event.id)
           .in("cpf", cpfs)
-          .in("registration_status", ["pending_payment", "confirmed"]);
+          .eq("registration_status", "confirmed");
 
         if (existing && existing.length > 0) {
           const names = existing.map(r => r.full_name).join(", ");
-          toast.error(`Já existe inscrição neste evento para: ${names}. Remova do lote para continuar.`);
+          toast.error(`Já existe inscrição confirmada neste evento para: ${names}.`);
           return;
         }
       }
