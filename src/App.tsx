@@ -49,6 +49,7 @@ const App = () => (
             <Route path="checkin" element={<AdminCheckin />} />
             <Route path="certificados" element={<AdminCertificates />} />
             <Route path="exportacao" element={<AdminExport />} />
+            <Route path="configuracoes" element={<AdminSiteSettings />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
