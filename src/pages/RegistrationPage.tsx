@@ -489,13 +489,21 @@ export default function RegistrationPage() {
           </TabsContent>
 
           <TabsContent value="batch" className="space-y-6">
-            <ParticipantSection
-              formData={buyer}
-              onChange={setBuyer}
-              errors={buyerErrors}
-              customFields={customFields}
-              title="Responsável pela Compra"
-            />
+            {buyerIsParticipant ? (
+              <ParticipantSection
+                formData={buyer}
+                onChange={setBuyer}
+                errors={buyerErrors}
+                customFields={customFields}
+                title="Responsável pela Compra (também participante)"
+              />
+            ) : (
+              <BuyerOnlySection
+                formData={buyer}
+                onChange={setBuyer}
+                errors={buyerErrors}
+              />
+            )}
             <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-card p-4">
               <Switch checked={buyerIsParticipant} onCheckedChange={setBuyerIsParticipant} id="buyer_participates" />
               <Label htmlFor="buyer_participates" className="text-sm text-foreground">
