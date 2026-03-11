@@ -344,9 +344,9 @@ export default function LandingPage() {
       })}
 
       {/* FOOTER */}
-      <footer className="border-t border-border bg-card px-4 py-8">
-        <div className="container mx-auto max-w-4xl text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} {event.organizer_name || "Igreja"}. Todos os direitos reservados.</p>
+      <footer className="border-t border-border/40 bg-card px-4 py-10">
+        <div className="container mx-auto max-w-4xl text-center">
+          <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} {event.organizer_name || "Igreja"}. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>
