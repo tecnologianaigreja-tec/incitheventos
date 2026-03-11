@@ -230,6 +230,16 @@ function validateForm(data: Record<string, string>, customFields: EventFormField
   return errors;
 }
 
+function validateBuyerOnly(data: Record<string, string>): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!data.full_name?.trim()) errors.full_name = "Nome obrigatório";
+  if (!data.cpf?.trim()) errors.cpf = "CPF obrigatório";
+  else if (!isValidCPF(data.cpf)) errors.cpf = "CPF inválido";
+  if (!data.phone?.trim()) errors.phone = "WhatsApp obrigatório";
+  else if (!isValidPhone(data.phone)) errors.phone = "Telefone inválido";
+  return errors;
+}
+
 function emptyForm(): Record<string, string> {
   return { full_name: "", cpf: "", email: "" };
 }
