@@ -405,7 +405,7 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {!selectedReg.qr_token && selectedReg.payment_status !== "approved" && (
+                        {!selectedReg.qr_token && selectedReg.payment_status !== "approved" && selectedReg.registration_status !== "confirmed" && (
                           <div className="flex flex-col items-center gap-3 pt-2">
                             <p className="text-center text-sm text-amber-600">
                               O QR Code será gerado após a confirmação do pagamento.
