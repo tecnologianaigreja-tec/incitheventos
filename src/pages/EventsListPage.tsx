@@ -1,36 +1,110 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData } from "@/lib/types";
-import { formatCentsToBRL } from "@/lib/constants";
+import { formatCentsToBRL, formatCPF, isValidCPF } from "@/lib/constants";
 import { getTemplateById } from "@/lib/templates";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Calendar, MapPin, ChevronRight, BookOpen } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode } from "lucide-react";
 import { motion } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
 };
 
+interface SiteSettings {
+  header_type: "color" | "banner";
+  header_color: string;
+  header_title: string;
+  header_subtitle: string;
+  header_banner_url: string | null;
+  footer_text: string;
+}
+
+interface RegistrationWithEvent {
+  id: string;
+  registration_code: string;
+  full_name: string;
+  email: string;
+  cpf: string;
+  registration_status: string;
+  payment_status: string;
+  qr_token: string | null;
+  checkin_status: string;
+  events: {
+    title: string;
+    start_date: string;
+    end_date: string;
+    start_time: string | null;
+    end_time: string | null;
+    location_name: string | null;
+    address: string | null;
+    city: string | null;
+    state: string | null;
+  };
+}
+
 export default function EventsListPage() {
   const [events, setEvents] = useState<EventData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
   const navigate = useNavigate();
+
+  // CPF lookup state
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const [cpfInput, setCpfInput] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [registrations, setRegistrations] = useState<RegistrationWithEvent[] | null>(null);
+  const [selectedReg, setSelectedReg] = useState<RegistrationWithEvent | null>(null);
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("events")
-        .select("*")
-        .in("status", ["published"])
-        .order("start_date", { ascending: true });
-      setEvents((data || []) as unknown as EventData[]);
+      const [evRes, settingsRes] = await Promise.all([
+        supabase
+          .from("events")
+          .select("*")
+          .in("status", ["published"])
+          .order("start_date", { ascending: true }),
+        supabase
+          .from("site_settings")
+          .select("*")
+          .limit(1)
+          .single(),
+      ]);
+      setEvents((evRes.data || []) as unknown as EventData[]);
+      if (settingsRes.data) setSettings(settingsRes.data as unknown as SiteSettings);
       setLoading(false);
     }
     load();
   }, []);
+
+  async function handleCpfLookup() {
+    const digits = cpfInput.replace(/\D/g, "");
+    if (!isValidCPF(digits)) return;
+    setLookupLoading(true);
+    setRegistrations(null);
+    setSelectedReg(null);
+
+    const { data } = await supabase
+      .from("registrations")
+      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, events(title, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+      .eq("cpf", digits)
+      .in("registration_status", ["confirmed", "pending_payment"]);
+
+    setRegistrations((data || []) as unknown as RegistrationWithEvent[]);
+    setLookupLoading(false);
+  }
 
   if (loading) {
     return (
@@ -40,93 +114,256 @@ export default function EventsListPage() {
     );
   }
 
-  // If only one event, redirect directly to its landing page
+  // If only one event, redirect directly
   if (events.length === 1) {
     navigate(`/evento/${events[0].slug}`, { replace: true });
     return null;
   }
 
-  if (events.length === 0) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
-        <BookOpen className="mb-4 h-16 w-16 text-muted-foreground" />
-        <h1 className="mb-2 font-serif text-3xl font-bold text-foreground">Nenhum evento publicado</h1>
-        <p className="text-muted-foreground">Em breve teremos novidades. Volte logo!</p>
-      </div>
-    );
-  }
+  const headerTitle = settings?.header_title || "Nossos Eventos";
+  const headerSubtitle = settings?.header_subtitle || "Confira os eventos disponíveis e inscreva-se";
+  const footerText = settings?.footer_text || "© 2026 INSIT. Todos os direitos reservados.";
 
   return (
-    <div className="min-h-screen bg-background">
-      <section className="bg-primary px-4 py-16 text-primary-foreground">
-        <div className="container mx-auto max-w-4xl text-center">
-          <h1 className="mb-2 font-serif text-4xl font-bold">Nossos Eventos</h1>
-          <p className="text-primary-foreground/70">Confira os eventos disponíveis e inscreva-se</p>
+    <div className="flex min-h-screen flex-col bg-background">
+      {/* HEADER */}
+      {settings?.header_type === "banner" && settings.header_banner_url ? (
+        <section
+          className="relative flex items-center justify-center px-4 py-16 text-center"
+          style={{
+            backgroundImage: `url(${settings.header_banner_url})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        >
+          <div className="absolute inset-0 bg-foreground/50" />
+          <div className="relative z-10 container mx-auto max-w-4xl">
+            <h1 className="mb-2 font-serif text-4xl font-bold text-white">{headerTitle}</h1>
+            <p className="text-white/80">{headerSubtitle}</p>
+          </div>
+        </section>
+      ) : (
+        <section
+          className="px-4 py-16 text-center"
+          style={{ backgroundColor: `hsl(${settings?.header_color || "220 60% 22%"})` }}
+        >
+          <div className="container mx-auto max-w-4xl">
+            <h1 className="mb-2 font-serif text-4xl font-bold text-white">{headerTitle}</h1>
+            <p className="text-white/80">{headerSubtitle}</p>
+          </div>
+        </section>
+      )}
+
+      {/* CONTENT */}
+      <section className="flex-1 px-4 py-8">
+        <div className="container mx-auto max-w-4xl">
+          {/* Consultar inscrições */}
+          <div className="mb-8 flex justify-end">
+            <Dialog open={lookupOpen} onOpenChange={(o) => { setLookupOpen(o); if (!o) { setRegistrations(null); setSelectedReg(null); setCpfInput(""); } }}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Search className="h-4 w-4" /> Consultar minhas inscrições
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Consultar Inscrições</DialogTitle>
+                </DialogHeader>
+
+                {!selectedReg ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">Digite seu CPF para consultar suas inscrições.</p>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="000.000.000-00"
+                        value={cpfInput}
+                        onChange={(e) => setCpfInput(formatCPF(e.target.value))}
+                        onKeyDown={(e) => e.key === "Enter" && handleCpfLookup()}
+                      />
+                      <Button onClick={handleCpfLookup} disabled={lookupLoading}>
+                        {lookupLoading ? "Buscando..." : "Buscar"}
+                      </Button>
+                    </div>
+
+                    {registrations !== null && registrations.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Nenhuma inscrição encontrada para este CPF.</p>
+                    )}
+
+                    {registrations && registrations.length > 0 && (
+                      <div className="space-y-3">
+                        {registrations.map((r) => (
+                          <Card
+                            key={r.id}
+                            className="cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => setSelectedReg(r)}
+                          >
+                            <CardContent className="p-4">
+                              <p className="font-semibold text-foreground">{r.events.title}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {new Date(r.events.start_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Código: {r.registration_code} · Status:{" "}
+                                <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                                  {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                                </span>
+                              </p>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Credential Card */
+                  <div className="space-y-4">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedReg(null)} className="gap-1 text-muted-foreground">
+                      ← Voltar
+                    </Button>
+
+                    <Card className="border-2 border-primary/20">
+                      <CardContent className="p-6 space-y-4">
+                        {/* Event info */}
+                        <div className="text-center border-b border-border pb-4">
+                          <h3 className="font-serif text-xl font-bold text-foreground">{selectedReg.events.title}</h3>
+                          <div className="mt-2 flex flex-wrap justify-center gap-3 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              {new Date(selectedReg.events.start_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
+                            </span>
+                            {selectedReg.events.start_time && (
+                              <span>{selectedReg.events.start_time}{selectedReg.events.end_time ? ` - ${selectedReg.events.end_time}` : ""}</span>
+                            )}
+                          </div>
+                          {selectedReg.events.location_name && (
+                            <p className="mt-1 flex items-center justify-center gap-1 text-sm text-muted-foreground">
+                              <MapPin className="h-3.5 w-3.5" /> {selectedReg.events.location_name}
+                              {selectedReg.events.city && `, ${selectedReg.events.city}`}
+                              {selectedReg.events.state && ` - ${selectedReg.events.state}`}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Participant info */}
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium text-foreground">Nome:</span> {selectedReg.full_name}</p>
+                          <p><span className="font-medium text-foreground">E-mail:</span> {selectedReg.email}</p>
+                          <p><span className="font-medium text-foreground">Código:</span> {selectedReg.registration_code}</p>
+                          <p>
+                            <span className="font-medium text-foreground">Status:</span>{" "}
+                            <span className={selectedReg.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                              {selectedReg.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                            </span>
+                          </p>
+                        </div>
+
+                        {/* QR Code */}
+                        {selectedReg.qr_token && selectedReg.payment_status === "approved" && (
+                          <div className="flex flex-col items-center pt-2">
+                            <div className="rounded-xl border-4 border-primary/10 bg-card p-4">
+                              <QRCodeSVG value={selectedReg.qr_token} size={180} level="H" />
+                            </div>
+                            <p className="mt-3 text-xs text-muted-foreground text-center">
+                              Apresente este QR Code no dia do evento para check-in.
+                            </p>
+                          </div>
+                        )}
+
+                        {selectedReg.payment_status !== "approved" && (
+                          <p className="text-center text-sm text-amber-600">
+                            O QR Code será liberado após a confirmação do pagamento.
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {events.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <BookOpen className="mb-4 h-16 w-16 text-muted-foreground" />
+              <h2 className="mb-2 font-serif text-3xl font-bold text-foreground">Nenhum evento publicado</h2>
+              <p className="text-muted-foreground">Em breve teremos novidades. Volte logo!</p>
+            </div>
+          ) : (
+            <motion.div
+              className="space-y-6"
+              initial="hidden"
+              animate="visible"
+              variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+            >
+              {events.map((ev) => {
+                const isClosed = ev.status === "closed";
+                const dateStr = new Date(ev.start_date + "T00:00:00").toLocaleDateString("pt-BR", {
+                  day: "numeric", month: "long", year: "numeric",
+                });
+
+                return (
+                  <motion.div key={ev.id} variants={fadeUp}>
+                    <Card
+                      className="cursor-pointer overflow-hidden hover:shadow-lg transition-shadow"
+                      onClick={() => navigate(`/evento/${ev.slug}`)}
+                    >
+                      <div className="flex flex-col md:flex-row">
+                        {ev.banner_url && (
+                          <div className="h-48 md:h-auto md:w-72 flex-shrink-0">
+                            <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover" />
+                          </div>
+                        )}
+                        <CardContent className="flex flex-1 flex-col justify-between p-6">
+                          <div>
+                            <h2 className="mb-2 font-serif text-2xl font-bold text-foreground">{ev.title}</h2>
+                            {ev.subtitle && <p className="mb-3 text-muted-foreground">{ev.subtitle}</p>}
+                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-4 w-4" /> {dateStr}
+                              </span>
+                              {ev.location_name && (
+                                <span className="flex items-center gap-1">
+                                  <MapPin className="h-4 w-4" /> {ev.location_name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-4 flex items-center justify-between">
+                            <span className="font-serif text-xl font-bold text-foreground">
+                              {formatCentsToBRL(ev.unit_price_cents)}
+                            </span>
+                            <Button
+                              variant={isClosed ? "outline" : "default"}
+                              className="gap-1"
+                              disabled={isClosed}
+                            >
+                              {isClosed ? "Encerrado" : "Ver detalhes"}
+                              {!isClosed && <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </div>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
         </div>
       </section>
 
-      <section className="px-4 py-12">
-        <motion.div
-          className="container mx-auto max-w-4xl space-y-6"
-          initial="hidden"
-          animate="visible"
-          variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
-        >
-          {events.map((ev) => {
-            const isClosed = ev.status === "closed";
-            const template = getTemplateById((ev as any).template || "classic");
-            const dateStr = new Date(ev.start_date + "T00:00:00").toLocaleDateString("pt-BR", {
-              day: "numeric", month: "long", year: "numeric",
-            });
-
-            return (
-              <motion.div key={ev.id} variants={fadeUp}>
-                <Card
-                  className="cursor-pointer overflow-hidden hover:shadow-lg transition-shadow"
-                  onClick={() => navigate(`/evento/${ev.slug}`)}
-                >
-                  <div className="flex flex-col md:flex-row">
-                    {ev.banner_url && (
-                      <div className="h-48 md:h-auto md:w-72 flex-shrink-0">
-                        <img src={ev.banner_url} alt={ev.title} className="h-full w-full object-cover" />
-                      </div>
-                    )}
-                    <CardContent className="flex flex-1 flex-col justify-between p-6">
-                      <div>
-                        <h2 className="mb-2 font-serif text-2xl font-bold text-foreground">{ev.title}</h2>
-                        {ev.subtitle && <p className="mb-3 text-muted-foreground">{ev.subtitle}</p>}
-                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-4 w-4" /> {dateStr}
-                          </span>
-                          {ev.location_name && (
-                            <span className="flex items-center gap-1">
-                              <MapPin className="h-4 w-4" /> {ev.location_name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between">
-                        <span className="font-serif text-xl font-bold text-foreground">
-                          {formatCentsToBRL(ev.unit_price_cents)}
-                        </span>
-                        <Button
-                          variant={isClosed ? "outline" : "default"}
-                          className="gap-1"
-                          disabled={isClosed}
-                        >
-                          {isClosed ? "Encerrado" : "Ver detalhes"}
-                          {!isClosed && <ChevronRight className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </div>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      </section>
+      {/* FOOTER */}
+      <footer className="border-t border-border bg-card px-4 py-6">
+        <div className="container mx-auto max-w-4xl flex flex-col items-center justify-between gap-3 sm:flex-row">
+          <p className="text-sm text-muted-foreground">{footerText}</p>
+          <Link
+            to="/admin/login"
+            className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          >
+            Administrativo
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }

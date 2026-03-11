@@ -13,6 +13,7 @@ const navItems = [
   { label: "Check-in", path: "/admin/checkin", icon: QrCode },
   { label: "Certificados", path: "/admin/certificados", icon: Award },
   { label: "Exportação", path: "/admin/exportacao", icon: Download },
+  { label: "Configurações", path: "/admin/configuracoes", icon: Settings },
 ];
 
 export default function AdminLayout() {
