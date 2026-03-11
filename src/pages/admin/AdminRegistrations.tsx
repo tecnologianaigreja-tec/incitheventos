@@ -8,10 +8,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle } from "lucide-react";
+import { Search, CheckCircle, FileDown, Loader2 } from "lucide-react";
 import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFilter } from "@/components/DynamicFieldFilters";
+import { generateEventReportPdf } from "@/lib/reportPdf";
+
+interface EventBasic {
+  id: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  location_name: string | null;
+  city: string | null;
+  state: string | null;
+  unit_price_cents: number;
+  max_participants: number | null;
+  workload_hours: number | null;
+}
 
 export default function AdminRegistrations() {
+  const [events, setEvents] = useState<EventBasic[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>("all");
   const [registrations, setRegistrations] = useState<RegistrationData[]>([]);
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,9 +37,23 @@ export default function AdminRegistrations() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
+  const [generatingReport, setGeneratingReport] = useState(false);
+
+  async function loadEvents() {
+    const { data } = await supabase
+      .from("events")
+      .select("id, title, start_date, end_date, start_time, end_time, location_name, city, state, unit_price_cents, max_participants, workload_hours")
+      .order("start_date", { ascending: false });
+    if (data) setEvents(data as EventBasic[]);
+  }
 
   async function load() {
-    const { data } = await supabase.from("registrations").select("*").order("created_at", { ascending: false });
+    setLoading(true);
+    let query = supabase.from("registrations").select("*").order("created_at", { ascending: false });
+    if (selectedEventId !== "all") {
+      query = query.eq("event_id", selectedEventId);
+    }
+    const { data } = await query;
     const regs = (data || []) as unknown as RegistrationData[];
     setRegistrations(regs);
 
@@ -44,11 +76,14 @@ export default function AdminRegistrations() {
         }
         setCustomFields(unique);
       }
+    } else {
+      setCustomFields([]);
     }
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => { load(); }, [selectedEventId]);
 
   async function manualCheckin(reg: RegistrationData) {
     if (reg.checkin_status === "checked_in") { toast.error("Já realizou check-in"); return; }
@@ -85,6 +120,67 @@ export default function AdminRegistrations() {
     dynamicFilters
   );
 
+  async function handleDownloadReport() {
+    const eventData = selectedEventId !== "all"
+      ? events.find(e => e.id === selectedEventId)
+      : null;
+
+    if (!eventData && selectedEventId !== "all") {
+      toast.error("Evento não encontrado");
+      return;
+    }
+
+    if (filtered.length === 0) {
+      toast.error("Nenhum inscrito para gerar relatório");
+      return;
+    }
+
+    setGeneratingReport(true);
+
+    try {
+      // Build filter description
+      const filterParts: string[] = [];
+      if (search) filterParts.push(`Busca: "${search}"`);
+      if (statusFilter !== "all") {
+        const statusLabels: Record<string, string> = {
+          pending_payment: "Pendente", confirmed: "Confirmado", canceled: "Cancelado",
+        };
+        filterParts.push(`Status: ${statusLabels[statusFilter] || statusFilter}`);
+      }
+      for (const f of dynamicFilters) {
+        filterParts.push(`${f.fieldLabel}: ${f.value}`);
+      }
+
+      const eventInfo = eventData || {
+        title: "Todos os Eventos",
+        start_date: events.length > 0 ? events[events.length - 1].start_date : new Date().toISOString().substring(0, 10),
+        end_date: events.length > 0 ? events[0].start_date : new Date().toISOString().substring(0, 10),
+        start_time: null,
+        end_time: null,
+        location_name: null,
+        city: null,
+        state: null,
+        unit_price_cents: 0,
+        max_participants: null,
+        workload_hours: null,
+      };
+
+      const doc = generateEventReportPdf({
+        event: eventInfo,
+        registrations: filtered,
+        filterDescription: filterParts.length > 0 ? filterParts.join(" | ") : null,
+      });
+
+      doc.save(`relatorio-${eventData?.title.replace(/\s+/g, "-").toLowerCase() || "geral"}-${new Date().toISOString().substring(0, 10)}.pdf`);
+      toast.success("Relatório gerado com sucesso!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao gerar relatório");
+    }
+
+    setGeneratingReport(false);
+  }
+
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
   const fixedDetails: { label: string; getValue: (r: RegistrationData) => string }[] = [
@@ -108,7 +204,19 @@ export default function AdminRegistrations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
-        <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadReport}
+            disabled={generatingReport || filtered.length === 0}
+            className="gap-2"
+          >
+            {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            Relatório PDF
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row">
@@ -116,6 +224,15 @@ export default function AdminRegistrations() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar por nome, e-mail ou código" value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
+        <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+          <SelectTrigger className="w-56"><SelectValue placeholder="Evento" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os eventos</SelectItem>
+            {events.map(e => (
+              <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
