@@ -258,10 +258,10 @@ export default function EventsListPage() {
                         </div>
 
                         {/* QR Code */}
-                        {selectedReg.qr_token && selectedReg.payment_status === "approved" && (
+                        {selectedReg.qr_token && (
                           <div className="flex flex-col items-center pt-2">
                             <div className="rounded-xl border-4 border-primary/10 bg-card p-4">
-                              <QRCodeSVG value={selectedReg.qr_token} size={180} level="H" />
+                              <QRCodeSVG value={selectedReg.qr_token} size={180} level="H" id="credential-qr" />
                             </div>
                             <p className="mt-3 text-xs text-muted-foreground text-center">
                               Apresente este QR Code no dia do evento para check-in.
@@ -269,11 +269,22 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {selectedReg.payment_status !== "approved" && (
+                        {!selectedReg.qr_token && (
                           <p className="text-center text-sm text-amber-600">
-                            O QR Code será liberado após a confirmação do pagamento.
+                            O QR Code será gerado após a confirmação do pagamento.
                           </p>
                         )}
+
+                        {/* Download button */}
+                        <div className="flex justify-center pt-2">
+                          <Button
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() => handleDownloadCredential(selectedReg)}
+                          >
+                            <Download className="h-4 w-4" /> Baixar Credencial
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>
