@@ -79,33 +79,45 @@ export type Database = {
           body_text: string
           created_at: string
           event_id: string
+          frame_style: string
           id: string
           logo_url: string | null
+          signature_count: number
           signature_image_url: string | null
           signature_name: string | null
+          signature_position: string
           signature_title: string | null
+          signatures: Json
           updated_at: string
         }
         Insert: {
           body_text?: string
           created_at?: string
           event_id: string
+          frame_style?: string
           id?: string
           logo_url?: string | null
+          signature_count?: number
           signature_image_url?: string | null
           signature_name?: string | null
+          signature_position?: string
           signature_title?: string | null
+          signatures?: Json
           updated_at?: string
         }
         Update: {
           body_text?: string
           created_at?: string
           event_id?: string
+          frame_style?: string
           id?: string
           logo_url?: string | null
+          signature_count?: number
           signature_image_url?: string | null
           signature_name?: string | null
+          signature_position?: string
           signature_title?: string | null
+          signatures?: Json
           updated_at?: string
         }
         Relationships: [
