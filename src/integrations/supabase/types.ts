@@ -74,6 +74,50 @@ export type Database = {
         }
         Relationships: []
       }
+      certificate_templates: {
+        Row: {
+          body_text: string
+          created_at: string
+          event_id: string
+          id: string
+          logo_url: string | null
+          signature_image_url: string | null
+          signature_name: string | null
+          signature_title: string | null
+          updated_at: string
+        }
+        Insert: {
+          body_text?: string
+          created_at?: string
+          event_id: string
+          id?: string
+          logo_url?: string | null
+          signature_image_url?: string | null
+          signature_name?: string | null
+          signature_title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body_text?: string
+          created_at?: string
+          event_id?: string
+          id?: string
+          logo_url?: string | null
+          signature_image_url?: string | null
+          signature_name?: string | null
+          signature_title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "certificate_templates_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       certificates: {
         Row: {
           certificate_code: string
