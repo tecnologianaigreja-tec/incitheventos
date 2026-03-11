@@ -326,7 +326,10 @@ export default function RegistrationPage() {
       if (Object.keys(errs).length > 0) { toast.error("Corrija os campos em destaque"); return; }
       if (!consentTerms || !consentData) { toast.error("Aceite os termos para continuar"); return; }
     } else {
-      const bErrs = validateForm(buyer, customFields);
+      // Validate buyer: different validation based on participation
+      const bErrs = buyerIsParticipant
+        ? validateForm(buyer, customFields)
+        : validateBuyerOnly(buyer);
       setBuyerErrors(bErrs);
       const pErrs = participants.map(p => validateForm(p, customFields));
       setParticipantErrors(pErrs);
@@ -334,17 +337,41 @@ export default function RegistrationPage() {
       if (hasErrors) { toast.error("Corrija os campos em destaque"); return; }
       if (!batchConsentTerms || !batchConsentData) { toast.error("Aceite os termos para continuar"); return; }
 
+      // Check duplicate CPFs within the batch
       const allPeople = buyerIsParticipant ? [buyer, ...participants] : participants;
-      const seen = new Set<string>();
+      const seenCpf = new Set<string>();
       for (const p of allPeople) {
-        const key = `${(p.full_name || "").toLowerCase().trim()}|${(p.email || "").toLowerCase().trim()}`;
-        if (seen.has(key)) { toast.error("Existem participantes duplicados no lote"); return; }
-        seen.add(key);
+        const cpfClean = (p.cpf || "").replace(/\D/g, "");
+        if (cpfClean && seenCpf.has(cpfClean)) { toast.error(`CPF ${p.cpf} está duplicado no lote`); return; }
+        if (cpfClean) seenCpf.add(cpfClean);
       }
 
       const count = buyerIsParticipant ? participants.length + 1 : participants.length;
       if (count < MIN_BATCH_SIZE) { toast.error(`Mínimo de ${MIN_BATCH_SIZE} participantes`); return; }
       if (count > MAX_BATCH_SIZE) { toast.error(`Máximo de ${MAX_BATCH_SIZE} participantes`); return; }
+    }
+
+    // Check CPF uniqueness against existing registrations for this event
+    {
+      const allParticipants = tab === "individual"
+        ? [individual]
+        : (buyerIsParticipant ? [buyer, ...participants] : participants);
+      const cpfs = allParticipants.map(p => (p.cpf || "").replace(/\D/g, "")).filter(Boolean);
+      
+      if (cpfs.length > 0) {
+        const { data: existing } = await supabase
+          .from("registrations")
+          .select("cpf, full_name, registration_status")
+          .eq("event_id", event.id)
+          .in("cpf", cpfs)
+          .in("registration_status", ["pending_payment", "confirmed"]);
+
+        if (existing && existing.length > 0) {
+          const names = existing.map(r => r.full_name).join(", ");
+          toast.error(`Já existe inscrição neste evento para: ${names}. Remova do lote para continuar.`);
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
