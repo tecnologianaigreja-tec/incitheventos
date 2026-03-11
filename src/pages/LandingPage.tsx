@@ -84,6 +84,10 @@ export default function LandingPage() {
   const hasBanner = !!event.banner_url;
   const hasAbout = !!(event.about_title || event.about_description || event.description);
   const hasCta = !!(event.cta_title || event.cta_description);
+  const hasPoster = !!(event as any).poster_url;
+  const sectionsOrder: string[] = Array.isArray((event as any).sections_order) && (event as any).sections_order.length > 0
+    ? (event as any).sections_order
+    : ["about", "audience", "includes", "poster", "faq", "cta"];
 
   return (
     <div className="min-h-screen bg-background" style={templateStyles}>
