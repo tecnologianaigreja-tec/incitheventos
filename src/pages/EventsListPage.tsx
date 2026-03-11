@@ -42,8 +42,10 @@ interface RegistrationWithEvent {
   payment_status: string;
   qr_token: string | null;
   checkin_status: string;
+  order_id: string;
   events: {
     title: string;
+    slug: string;
     start_date: string;
     end_date: string;
     start_time: string | null;
