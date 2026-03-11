@@ -387,8 +387,8 @@ export default function EventsListPage() {
                           <p><span className="font-medium text-foreground">Código:</span> {selectedReg.registration_code}</p>
                           <p>
                             <span className="font-medium text-foreground">Status:</span>{" "}
-                            <span className={selectedReg.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                              {selectedReg.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                            <span className={(selectedReg.payment_status === "approved" || selectedReg.registration_status === "confirmed") ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                              {(selectedReg.payment_status === "approved" || selectedReg.registration_status === "confirmed") ? "Confirmada" : "Pendente"}
                             </span>
                           </p>
                         </div>

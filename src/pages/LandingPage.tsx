@@ -285,7 +285,15 @@ export default function LandingPage() {
           </section>
         );
 
-        if (sectionId === "cta") return (
+        if (sectionId === "cta" || (sectionId !== "about" && sectionId !== "audience" && sectionId !== "includes" && sectionId !== "poster" && sectionId !== "faq" && false)) return null;
+        // Always render CTA at the end regardless of sectionsOrder
+        return null;
+      })}
+
+      {/* PRICING & CTA - always rendered */}
+      {(() => {
+        const _unused = null; // pricing/CTA block
+        return (
           <div key="cta">
             {/* PRICING */}
             <section className="px-4 py-20">
