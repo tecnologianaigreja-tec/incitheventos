@@ -61,6 +61,18 @@ export default function AdminEventEditor() {
   const [ctaTitle, setCtaTitle] = useState("");
   const [ctaDescription, setCtaDescription] = useState("");
   const [pricingLabel, setPricingLabel] = useState("");
+  
+  // ─── Sections order ───
+  const DEFAULT_SECTIONS_ORDER = ["about", "audience", "includes", "poster", "faq", "cta"];
+  const SECTION_LABELS: Record<string, string> = {
+    about: "Sobre o Evento",
+    audience: "Público-Alvo",
+    includes: "O Que Está Incluso",
+    poster: "Cartaz do Evento",
+    faq: "Perguntas Frequentes",
+    cta: "CTA Final + Investimento",
+  };
+  const [sectionsOrder, setSectionsOrder] = useState<string[]>(DEFAULT_SECTIONS_ORDER);
 
   // ─── Form fields ───
   const [fields, setFields] = useState<FieldDraft[]>([]);
