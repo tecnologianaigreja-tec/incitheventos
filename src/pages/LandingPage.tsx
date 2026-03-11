@@ -27,6 +27,7 @@ export default function LandingPage() {
   const { slug } = useParams<{ slug: string }>();
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [registrationCount, setRegistrationCount] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -38,7 +39,16 @@ export default function LandingPage() {
         .eq("slug", slug)
         .in("status", ["published", "closed", "concluded"])
         .single();
-      if (data) setEvent(data as unknown as EventData);
+      if (data) {
+        setEvent(data as unknown as EventData);
+        // Count active registrations
+        const { count } = await supabase
+          .from("registrations")
+          .select("*", { count: "exact", head: true })
+          .eq("event_id", data.id)
+          .in("registration_status", ["confirmed", "pending_payment"]);
+        setRegistrationCount(count || 0);
+      }
       setLoading(false);
     }
     load();
@@ -71,6 +81,10 @@ export default function LandingPage() {
   const dateStr = startDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const endDateStr = endDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const isClosed = event.status === "closed" || (event.status as string) === "concluded";
+  const showRemainingSpots = !!(event as any).show_remaining_spots && !!event.max_participants;
+  const remainingSpots = event.max_participants ? Math.max(0, event.max_participants - registrationCount) : null;
+  const isFull = showRemainingSpots && remainingSpots === 0;
+  const isDisabled = isClosed || isFull;
 
   const audienceItems: TargetAudienceItem[] = Array.isArray(event.target_audience) && event.target_audience.length > 0
     ? event.target_audience : [];
@@ -150,7 +164,12 @@ export default function LandingPage() {
             )}
           </motion.div>
           <motion.div variants={fadeUp}>
-            {!isClosed ? (
+            {showRemainingSpots && remainingSpots !== null && !isClosed && (
+              <p className="mb-6 inline-block rounded-full border border-white/15 px-5 py-2 text-sm font-medium" style={{ color: isFull ? '#ef4444' : `hsl(${template.colors.accent})` }}>
+                {isFull ? "Vagas esgotadas" : `🔥 ${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
+              </p>
+            )}
+            {!isDisabled ? (
               <Button
                 size="lg"
                 className="px-12 py-7 text-lg font-semibold rounded-xl shadow-xl hover:scale-[1.02] transition-transform duration-200"
@@ -163,7 +182,7 @@ export default function LandingPage() {
                 Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
               </Button>
             ) : (
-              <p className="text-lg font-medium opacity-50">Inscrições encerradas</p>
+              <p className="text-lg font-medium opacity-50">{isFull ? "Vagas esgotadas" : "Inscrições encerradas"}</p>
             )}
           </motion.div>
         </motion.div>
@@ -284,8 +303,13 @@ export default function LandingPage() {
                         {event.pricing_label || "Inscrição Individual"}
                       </p>
                       <p className="mb-1 font-serif text-6xl font-bold text-foreground tracking-tight">{formatCentsToBRL(event.unit_price_cents)}</p>
-                      <p className="mb-10 text-sm text-muted-foreground">por participante</p>
-                      {!isClosed && (
+                      <p className="mb-6 text-sm text-muted-foreground">por participante</p>
+                      {showRemainingSpots && remainingSpots !== null && (
+                        <p className={`mb-6 text-sm font-semibold ${isFull ? "text-destructive" : "text-accent"}`}>
+                          {isFull ? "Vagas esgotadas" : `${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
+                        </p>
+                      )}
+                      {!isDisabled && (
                         <Button
                           size="lg"
                           className="w-full py-7 text-lg font-semibold rounded-xl shadow-lg hover:scale-[1.01] transition-transform"
@@ -297,6 +321,9 @@ export default function LandingPage() {
                         >
                           Garantir minha vaga
                         </Button>
+                      )}
+                      {isDisabled && (
+                        <p className="text-lg font-medium text-muted-foreground">{isFull ? "Vagas esgotadas" : "Inscrições encerradas"}</p>
                       )}
                     </CardContent>
                   </Card>
@@ -319,7 +346,7 @@ export default function LandingPage() {
                       {event.cta_description}
                     </motion.p>
                   )}
-                  {!isClosed && (
+                  {!isDisabled && (
                     <motion.div variants={fadeUp}>
                       <Button
                         size="lg"

@@ -49,6 +49,7 @@ export default function AdminEventEditor() {
     start_time: "", end_time: "", location_name: "", address: "", city: "", state: "",
     workload_hours: "", organizer_name: "", unit_price_cents: "", max_participants: "",
     status: "draft", banner_url: "", template: "classic", poster_url: "",
+    show_remaining_spots: false,
   });
 
   // ─── Landing page content ───
@@ -94,6 +95,7 @@ export default function AdminEventEditor() {
         banner_url: e.banner_url || "",
         template: (e as any).template || "classic",
         poster_url: (ev as any).poster_url || "",
+        show_remaining_spots: (ev as any).show_remaining_spots || false,
       });
       const savedOrder = (ev as any).sections_order;
       if (Array.isArray(savedOrder) && savedOrder.length > 0) {
@@ -161,6 +163,7 @@ export default function AdminEventEditor() {
       banner_url: form.banner_url || null,
       poster_url: form.poster_url || null,
       template: form.template,
+      show_remaining_spots: form.show_remaining_spots,
       hero_badge: heroBadge || null,
       about_title: aboutTitle || null,
       about_description: aboutDescription || null,
@@ -513,7 +516,24 @@ export default function AdminEventEditor() {
             </CardContent>
           </Card>
 
-          {/* Poster / Cartaz */}
+          {/* Show remaining spots toggle */}
+          <Card>
+            <CardHeader><CardTitle className="font-serif text-base">Vagas Restantes</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Exibir vagas restantes na landing page</p>
+                  <p className="text-xs text-muted-foreground">Mostra quantas vagas ainda estão disponíveis (baseado no campo "Máximo de participantes" dos dados básicos). Quando esgotar, o botão de inscrição será desabilitado automaticamente.</p>
+                </div>
+                <Switch
+                  checked={form.show_remaining_spots}
+                  onCheckedChange={(v) => setForm({ ...form, show_remaining_spots: v })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cartaz do Evento */}
           <Card>
             <CardHeader><CardTitle className="font-serif text-base">Cartaz do Evento</CardTitle></CardHeader>
             <CardContent className="space-y-3">

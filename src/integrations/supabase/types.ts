@@ -282,6 +282,7 @@ export type Database = {
           poster_url: string | null
           pricing_label: string | null
           sections_order: Json | null
+          show_remaining_spots: boolean
           slug: string
           start_date: string
           start_time: string | null
@@ -317,6 +318,7 @@ export type Database = {
           poster_url?: string | null
           pricing_label?: string | null
           sections_order?: Json | null
+          show_remaining_spots?: boolean
           slug: string
           start_date: string
           start_time?: string | null
@@ -352,6 +354,7 @@ export type Database = {
           poster_url?: string | null
           pricing_label?: string | null
           sections_order?: Json | null
+          show_remaining_spots?: boolean
           slug?: string
           start_date?: string
           start_time?: string | null
