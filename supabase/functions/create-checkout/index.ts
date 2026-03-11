@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
           items: participants.map((p: any) => ({
             description: `Inscrição - ${event.title} - ${p.full_name}`,
             quantity: 1,
-            amount: unitPriceCents,
+            price: unitPriceCents,
           })),
           redirect_url: `${appUrl}/pedido/${orderCode}?status=redirect`,
           webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
