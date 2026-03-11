@@ -516,7 +516,24 @@ export default function AdminEventEditor() {
             </CardContent>
           </Card>
 
-          {/* Poster / Cartaz */}
+          {/* Show remaining spots toggle */}
+          <Card>
+            <CardHeader><CardTitle className="font-serif text-base">Vagas Restantes</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Exibir vagas restantes na landing page</p>
+                  <p className="text-xs text-muted-foreground">Mostra quantas vagas ainda estão disponíveis (baseado no campo "Máximo de participantes" dos dados básicos). Quando esgotar, o botão de inscrição será desabilitado automaticamente.</p>
+                </div>
+                <Switch
+                  checked={form.show_remaining_spots}
+                  onCheckedChange={(v) => setForm({ ...form, show_remaining_spots: v })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cartaz do Evento */}
           <Card>
             <CardHeader><CardTitle className="font-serif text-base">Cartaz do Evento</CardTitle></CardHeader>
             <CardContent className="space-y-3">
