@@ -268,6 +268,33 @@ export default function AdminEventEditor() {
                 <Label>Descrição</Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} />
               </div>
+              {/* Template Selector */}
+              <div className="sm:col-span-2">
+                <Label className="mb-3 block">Modelo da Landing Page</Label>
+                <div className="grid gap-3 sm:grid-cols-5">
+                  {LANDING_TEMPLATES.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setForm({ ...form, template: t.id })}
+                      className={`relative rounded-lg border-2 p-3 text-left transition-all hover:shadow-md ${form.template === t.id ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
+                    >
+                      {form.template === t.id && (
+                        <div className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="h-3 w-3" />
+                        </div>
+                      )}
+                      <div className="mb-2 flex gap-1">
+                        <div className="h-6 w-6 rounded" style={{ backgroundColor: `hsl(${t.colors.primary})` }} />
+                        <div className="h-6 w-6 rounded" style={{ backgroundColor: `hsl(${t.colors.accent})` }} />
+                        <div className="h-6 w-6 rounded" style={{ backgroundColor: `hsl(${t.colors.secondary})` }} />
+                      </div>
+                      <p className="text-xs font-semibold text-foreground">{t.name}</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight">{t.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
