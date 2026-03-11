@@ -314,12 +314,36 @@ export default function EventsListPage() {
                               <p className="text-sm text-muted-foreground">
                                 {new Date(r.events.start_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
                               </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Código: {r.registration_code} · Status:{" "}
-                                <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                                  {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
-                                </span>
-                              </p>
+                              <div className="mt-1 flex items-center justify-between">
+                                <p className="text-xs text-muted-foreground">
+                                  Código: {r.registration_code} · Status:{" "}
+                                  <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                                    {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                                  </span>
+                                </p>
+                                {r.payment_status !== "approved" && (
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="gap-1 text-xs gradient-gold text-white shadow-gold hover:opacity-90"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const { data: order } = await supabase
+                                        .from("orders")
+                                        .select("payment_link, order_code")
+                                        .eq("id", r.order_id)
+                                        .single();
+                                      if (order?.payment_link) {
+                                        window.location.href = order.payment_link;
+                                      } else {
+                                        navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                      }
+                                    }}
+                                  >
+                                    <CreditCard className="h-3 w-3" /> Pagar
+                                  </Button>
+                                )}
+                              </div>
                             </CardContent>
                           </Card>
                         ))}
