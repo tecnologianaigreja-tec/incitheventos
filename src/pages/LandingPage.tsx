@@ -164,7 +164,12 @@ export default function LandingPage() {
             )}
           </motion.div>
           <motion.div variants={fadeUp}>
-            {!isClosed ? (
+            {showRemainingSpots && remainingSpots !== null && !isClosed && (
+              <p className="mb-6 inline-block rounded-full border border-white/15 px-5 py-2 text-sm font-medium" style={{ color: isFull ? '#ef4444' : `hsl(${template.colors.accent})` }}>
+                {isFull ? "Vagas esgotadas" : `🔥 ${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
+              </p>
+            )}
+            {!isDisabled ? (
               <Button
                 size="lg"
                 className="px-12 py-7 text-lg font-semibold rounded-xl shadow-xl hover:scale-[1.02] transition-transform duration-200"
@@ -177,7 +182,7 @@ export default function LandingPage() {
                 Inscreva-se agora <ChevronRight className="ml-2 h-5 w-5" />
               </Button>
             ) : (
-              <p className="text-lg font-medium opacity-50">Inscrições encerradas</p>
+              <p className="text-lg font-medium opacity-50">{isFull ? "Vagas esgotadas" : "Inscrições encerradas"}</p>
             )}
           </motion.div>
         </motion.div>
