@@ -139,7 +139,8 @@ export interface ParticipantForm {
   [key: string]: string; // Allow dynamic custom fields
 }
 
-export interface IndividualRegistrationForm extends ParticipantForm {
+export interface IndividualRegistrationForm {
+  participant: ParticipantForm;
   consent_terms: boolean;
   consent_data_usage: boolean;
 }
