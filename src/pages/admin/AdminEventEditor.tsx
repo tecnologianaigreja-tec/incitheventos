@@ -95,6 +95,7 @@ export default function AdminEventEditor() {
         banner_url: e.banner_url || "",
         template: (e as any).template || "classic",
         poster_url: (ev as any).poster_url || "",
+        show_remaining_spots: (ev as any).show_remaining_spots || false,
       });
       const savedOrder = (ev as any).sections_order;
       if (Array.isArray(savedOrder) && savedOrder.length > 0) {
