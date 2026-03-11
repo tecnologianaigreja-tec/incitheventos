@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode } from "lucide-react";
+import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download } from "lucide-react";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -104,6 +104,95 @@ export default function EventsListPage() {
 
     setRegistrations((data || []) as unknown as RegistrationWithEvent[]);
     setLookupLoading(false);
+  }
+
+  async function handleDownloadCredential(reg: RegistrationWithEvent) {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ unit: "mm", format: "a5" });
+
+    const pw = doc.internal.pageSize.getWidth();
+    let y = 20;
+
+    // Title
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text(reg.events.title, pw / 2, y, { align: "center" });
+    y += 10;
+
+    // Date & location
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    const dateStr = new Date(reg.events.start_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+    let infoLine = dateStr;
+    if (reg.events.start_time) infoLine += `  ${reg.events.start_time}${reg.events.end_time ? ` - ${reg.events.end_time}` : ""}`;
+    doc.text(infoLine, pw / 2, y, { align: "center" });
+    y += 6;
+
+    if (reg.events.location_name) {
+      let loc = reg.events.location_name;
+      if (reg.events.city) loc += `, ${reg.events.city}`;
+      if (reg.events.state) loc += ` - ${reg.events.state}`;
+      doc.text(loc, pw / 2, y, { align: "center" });
+      y += 6;
+    }
+
+    // Divider
+    y += 4;
+    doc.setDrawColor(200);
+    doc.line(20, y, pw - 20, y);
+    y += 8;
+
+    // Participant info
+    doc.setFontSize(11);
+    const fields = [
+      ["Nome", reg.full_name],
+      ["E-mail", reg.email],
+      ["Código", reg.registration_code],
+      ["Status", reg.payment_status === "approved" ? "Confirmada" : "Pendente"],
+    ];
+    for (const [label, value] of fields) {
+      doc.setFont("helvetica", "bold");
+      doc.text(`${label}: `, 20, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(value, 20 + doc.getTextWidth(`${label}: `), y);
+      y += 7;
+    }
+
+    // QR Code
+    if (reg.qr_token) {
+      y += 6;
+      const qrCanvas = document.createElement("canvas");
+      // Use the QR SVG already in DOM
+      const svgEl = document.getElementById("credential-qr");
+      if (svgEl) {
+        const svgData = new XMLSerializer().serializeToString(svgEl);
+        const img = new Image();
+        const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(svgBlob);
+        img.onload = () => {
+          qrCanvas.width = 360;
+          qrCanvas.height = 360;
+          const ctx = qrCanvas.getContext("2d")!;
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, 360, 360);
+          ctx.drawImage(img, 0, 0, 360, 360);
+          URL.revokeObjectURL(url);
+
+          const qrDataUrl = qrCanvas.toDataURL("image/png");
+          const qrSize = 40;
+          doc.addImage(qrDataUrl, "PNG", (pw - qrSize) / 2, y, qrSize, qrSize);
+          y += qrSize + 6;
+          doc.setFontSize(8);
+          doc.text("Apresente este QR Code no dia do evento para check-in.", pw / 2, y, { align: "center" });
+
+          doc.save(`credencial-${reg.registration_code}.pdf`);
+        };
+        img.src = url;
+        return;
+      }
+    }
+
+    doc.save(`credencial-${reg.registration_code}.pdf`);
   }
 
   if (loading) {
@@ -258,10 +347,10 @@ export default function EventsListPage() {
                         </div>
 
                         {/* QR Code */}
-                        {selectedReg.qr_token && selectedReg.payment_status === "approved" && (
+                        {selectedReg.qr_token && (
                           <div className="flex flex-col items-center pt-2">
                             <div className="rounded-xl border-4 border-primary/10 bg-card p-4">
-                              <QRCodeSVG value={selectedReg.qr_token} size={180} level="H" />
+                              <QRCodeSVG value={selectedReg.qr_token} size={180} level="H" id="credential-qr" />
                             </div>
                             <p className="mt-3 text-xs text-muted-foreground text-center">
                               Apresente este QR Code no dia do evento para check-in.
@@ -269,11 +358,22 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {selectedReg.payment_status !== "approved" && (
+                        {!selectedReg.qr_token && (
                           <p className="text-center text-sm text-amber-600">
-                            O QR Code será liberado após a confirmação do pagamento.
+                            O QR Code será gerado após a confirmação do pagamento.
                           </p>
                         )}
+
+                        {/* Download button */}
+                        <div className="flex justify-center pt-2">
+                          <Button
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() => handleDownloadCredential(selectedReg)}
+                          >
+                            <Download className="h-4 w-4" /> Baixar Credencial
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>
