@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData, EventFormField, TargetAudienceItem, FaqItem } from "@/lib/types";
 import { formatCentsToBRL } from "@/lib/constants";
+import { LANDING_TEMPLATES } from "@/lib/templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, Image, Upload, X, Check } from "lucide-react";
 
 // ─── Form Builder Types ───
 interface FieldDraft {
@@ -47,7 +48,7 @@ export default function AdminEventEditor() {
     title: "", subtitle: "", slug: "", description: "", start_date: "", end_date: "",
     start_time: "", end_time: "", location_name: "", address: "", city: "", state: "",
     workload_hours: "", organizer_name: "", unit_price_cents: "", max_participants: "",
-    status: "draft", banner_url: "",
+    status: "draft", banner_url: "", template: "classic",
   });
 
   // ─── Landing page content ───
@@ -79,6 +80,7 @@ export default function AdminEventEditor() {
         organizer_name: e.organizer_name || "", unit_price_cents: (e.unit_price_cents / 100).toString(),
         max_participants: e.max_participants?.toString() || "", status: e.status,
         banner_url: e.banner_url || "",
+        template: (e as any).template || "classic",
       });
       setHeroBadge(e.hero_badge || "");
       setAboutTitle(e.about_title || "");
@@ -140,6 +142,7 @@ export default function AdminEventEditor() {
       max_participants: form.max_participants ? parseInt(form.max_participants) : null,
       status: form.status,
       banner_url: form.banner_url || null,
+      template: form.template,
       hero_badge: heroBadge || null,
       about_title: aboutTitle || null,
       about_description: aboutDescription || null,
@@ -264,6 +267,33 @@ export default function AdminEventEditor() {
               <div className="sm:col-span-2">
                 <Label>Descrição</Label>
                 <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} />
+              </div>
+              {/* Template Selector */}
+              <div className="sm:col-span-2">
+                <Label className="mb-3 block">Modelo da Landing Page</Label>
+                <div className="grid gap-3 sm:grid-cols-5">
+                  {LANDING_TEMPLATES.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setForm({ ...form, template: t.id })}
+                      className={`relative rounded-lg border-2 p-3 text-left transition-all hover:shadow-md ${form.template === t.id ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
+                    >
+                      {form.template === t.id && (
+                        <div className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="h-3 w-3" />
+                        </div>
+                      )}
+                      <div className="mb-2 flex gap-1">
+                        <div className="h-6 w-6 rounded" style={{ backgroundColor: `hsl(${t.colors.primary})` }} />
+                        <div className="h-6 w-6 rounded" style={{ backgroundColor: `hsl(${t.colors.accent})` }} />
+                        <div className="h-6 w-6 rounded" style={{ backgroundColor: `hsl(${t.colors.secondary})` }} />
+                      </div>
+                      <p className="text-xs font-semibold text-foreground">{t.name}</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight">{t.description}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>

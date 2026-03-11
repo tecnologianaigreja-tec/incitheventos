@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import EventsListPage from "./pages/EventsListPage";
 import LandingPage from "./pages/LandingPage";
 import RegistrationPage from "./pages/RegistrationPage";
 import OrderStatusPage from "./pages/OrderStatusPage";
@@ -29,7 +30,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<EventsListPage />} />
+          <Route path="/evento/:slug" element={<LandingPage />} />
           <Route path="/evento/:slug/inscricao" element={<RegistrationPage />} />
           <Route path="/pedido/:orderCode" element={<OrderStatusPage />} />
           <Route path="/inscricao/:registrationCode/qrcode" element={<QRCodePage />} />
