@@ -203,11 +203,8 @@ export default function EventsListPage() {
     );
   }
 
-  // If only one event, redirect directly
-  if (events.length === 1) {
-    navigate(`/evento/${events[0].slug}`, { replace: true });
-    return null;
-  }
+  // If only one event, show the list page normally (don't redirect)
+  // so users can still access the events list and CPF lookup
 
   const headerTitle = settings?.header_title || "Nossos Eventos";
   const headerSubtitle = settings?.header_subtitle || "Confira os eventos disponíveis e inscreva-se";
