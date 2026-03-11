@@ -543,6 +543,42 @@ export type Database = {
           },
         ]
       }
+      site_settings: {
+        Row: {
+          created_at: string
+          footer_text: string
+          header_banner_url: string | null
+          header_color: string
+          header_subtitle: string
+          header_title: string
+          header_type: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          footer_text?: string
+          header_banner_url?: string | null
+          header_color?: string
+          header_subtitle?: string
+          header_title?: string
+          header_type?: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          footer_text?: string
+          header_banner_url?: string | null
+          header_color?: string
+          header_subtitle?: string
+          header_title?: string
+          header_type?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
