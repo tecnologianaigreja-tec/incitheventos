@@ -317,11 +317,11 @@ export default function EventsListPage() {
                               <div className="mt-1 flex items-center justify-between">
                                 <p className="text-xs text-muted-foreground">
                                   Código: {r.registration_code} · Status:{" "}
-                                  <span className={r.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                                    {r.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                                  <span className={(r.payment_status === "approved" || r.registration_status === "confirmed") ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                                    {(r.payment_status === "approved" || r.registration_status === "confirmed") ? "Confirmada" : "Pendente"}
                                   </span>
                                 </p>
-                                {r.payment_status !== "approved" && (
+                                {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
                                   <Button
                                     size="sm"
                                     variant="default"
@@ -387,8 +387,8 @@ export default function EventsListPage() {
                           <p><span className="font-medium text-foreground">Código:</span> {selectedReg.registration_code}</p>
                           <p>
                             <span className="font-medium text-foreground">Status:</span>{" "}
-                            <span className={selectedReg.payment_status === "approved" ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                              {selectedReg.payment_status === "approved" ? "Confirmada" : "Pendente"}
+                            <span className={(selectedReg.payment_status === "approved" || selectedReg.registration_status === "confirmed") ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                              {(selectedReg.payment_status === "approved" || selectedReg.registration_status === "confirmed") ? "Confirmada" : "Pendente"}
                             </span>
                           </p>
                         </div>
@@ -405,7 +405,7 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {!selectedReg.qr_token && selectedReg.payment_status !== "approved" && (
+                        {!selectedReg.qr_token && selectedReg.payment_status !== "approved" && selectedReg.registration_status !== "confirmed" && (
                           <div className="flex flex-col items-center gap-3 pt-2">
                             <p className="text-center text-sm text-amber-600">
                               O QR Code será gerado após a confirmação do pagamento.
