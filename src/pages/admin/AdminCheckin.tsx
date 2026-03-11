@@ -6,66 +6,72 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff } from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
 
 export default function AdminCheckin() {
   const [scannerActive, setScannerActive] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [result, setResult] = useState<{ reg: RegistrationData; status: "success" | "already" | "error" | "not_found" | "not_paid" } | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const scanningRef = useRef(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const processingRef = useRef(false);
 
   const processCheckin = useCallback(async (token: string) => {
-    const { data: reg } = await supabase
-      .from("registrations")
-      .select("*")
-      .eq("qr_token", token.trim())
-      .single();
+    if (processingRef.current) return;
+    processingRef.current = true;
 
-    if (!reg) {
-      setResult({ reg: null as any, status: "not_found" });
-      toast.error("QR Code inválido");
-      return;
+    try {
+      const { data: reg } = await supabase
+        .from("registrations")
+        .select("*")
+        .eq("qr_token", token.trim())
+        .single();
+
+      if (!reg) {
+        setResult({ reg: null as any, status: "not_found" });
+        toast.error("QR Code inválido");
+        return;
+      }
+
+      const registration = reg as unknown as RegistrationData;
+
+      if (registration.payment_status !== "approved") {
+        setResult({ reg: registration, status: "not_paid" });
+        toast.error("Pagamento não aprovado");
+        return;
+      }
+
+      if (registration.checkin_status === "checked_in") {
+        setResult({ reg: registration, status: "already" });
+        toast.warning("Check-in já realizado");
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { error } = await supabase.from("registrations").update({
+        checkin_status: "checked_in",
+        checkin_at: new Date().toISOString(),
+        checkin_by_user_id: user?.id,
+      }).eq("id", registration.id);
+
+      if (error) {
+        setResult({ reg: registration, status: "error" });
+        toast.error("Erro no check-in");
+        return;
+      }
+
+      await supabase.from("checkin_logs").insert({
+        registration_id: registration.id,
+        action_type: "scan",
+        checked_by_user_id: user?.id,
+      });
+
+      setResult({ reg: { ...registration, checkin_status: "checked_in" }, status: "success" });
+      toast.success(`Check-in de ${registration.full_name} realizado!`);
+    } finally {
+      setTimeout(() => { processingRef.current = false; }, 2000);
     }
-
-    const registration = reg as unknown as RegistrationData;
-
-    if (registration.payment_status !== "approved") {
-      setResult({ reg: registration, status: "not_paid" });
-      toast.error("Pagamento não aprovado");
-      return;
-    }
-
-    if (registration.checkin_status === "checked_in") {
-      setResult({ reg: registration, status: "already" });
-      toast.warning("Check-in já realizado");
-      return;
-    }
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const { error } = await supabase.from("registrations").update({
-      checkin_status: "checked_in",
-      checkin_at: new Date().toISOString(),
-      checkin_by_user_id: user?.id,
-    }).eq("id", registration.id);
-
-    if (error) {
-      setResult({ reg: registration, status: "error" });
-      toast.error("Erro no check-in");
-      return;
-    }
-
-    await supabase.from("checkin_logs").insert({
-      registration_id: registration.id,
-      action_type: "scan",
-      checked_by_user_id: user?.id,
-    });
-
-    setResult({ reg: { ...registration, checkin_status: "checked_in" }, status: "success" });
-    toast.success(`Check-in de ${registration.full_name} realizado!`);
   }, []);
 
   async function handleManualSearch() {
@@ -92,38 +98,65 @@ export default function AdminCheckin() {
     }
   }
 
-  // Simple QR scanner using camera
   async function startScanner() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
+      const scanner = new Html5Qrcode("qr-reader");
+      scannerRef.current = scanner;
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          processCheckin(decodedText);
+        },
+        () => {} // ignore scan failures
+      );
       setScannerActive(true);
-      scanningRef.current = true;
-      // We'll use a simple approach - user manually enters or uses manual search
-      // Full QR scanning requires a library integration
     } catch {
       toast.error("Não foi possível acessar a câmera");
     }
   }
 
-  function stopScanner() {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
+  async function stopScanner() {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch {}
+      scannerRef.current = null;
     }
     setScannerActive(false);
-    scanningRef.current = false;
   }
 
-  useEffect(() => { return () => stopScanner(); }, []);
+  useEffect(() => {
+    return () => { stopScanner(); };
+  }, []);
 
   return (
     <div className="space-y-6">
       <h2 className="font-serif text-xl font-bold text-foreground">Check-in</h2>
+
+      {/* QR Scanner */}
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-foreground">Leitura de QR Code</p>
+            <Button
+              variant={scannerActive ? "destructive" : "default"}
+              size="sm"
+              onClick={scannerActive ? stopScanner : startScanner}
+              className="gap-2"
+            >
+              {scannerActive ? <><CameraOff className="h-4 w-4" /> Parar Câmera</> : <><Camera className="h-4 w-4" /> Abrir Câmera</>}
+            </Button>
+          </div>
+          <div
+            id="qr-reader"
+            className={`mx-auto overflow-hidden rounded-lg ${scannerActive ? "w-full max-w-sm" : "hidden"}`}
+          />
+          {scannerActive && (
+            <p className="text-center text-xs text-muted-foreground">Aponte a câmera para o QR Code do participante</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Manual search */}
       <Card>

@@ -275,14 +275,48 @@ export default function AdminEventEditor() {
           <Card>
             <CardHeader><CardTitle className="font-serif text-base">Banner / Imagem de Fundo</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <Label>URL do banner</Label>
-              <Input value={form.banner_url} onChange={e => setForm({ ...form, banner_url: e.target.value })} placeholder="https://... (URL da imagem de fundo)" />
               {form.banner_url && (
-                <div className="relative h-40 overflow-hidden rounded-lg border border-border">
+                <div className="relative h-48 overflow-hidden rounded-lg border border-border">
                   <img src={form.banner_url} alt="Banner preview" className="h-full w-full object-cover" />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute right-2 top-2 h-8 w-8"
+                    onClick={() => setForm({ ...form, banner_url: "" })}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">Cole a URL de uma imagem hospedada. Ela será exibida como fundo da seção hero.</p>
+              {!form.banner_url && (
+                <label className="flex h-48 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/30 transition-colors hover:bg-muted/50">
+                  <Upload className="h-8 w-8 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Clique para enviar uma imagem</span>
+                  <span className="text-xs text-muted-foreground">JPG, PNG ou WebP (máx. 10MB)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024) { toast.error("Arquivo muito grande (máx. 10MB)"); return; }
+                      const ext = file.name.split(".").pop() || "jpg";
+                      const path = `banners/${Date.now()}.${ext}`;
+                      toast.loading("Enviando imagem...", { id: "upload" });
+                      const { error } = await supabase.storage.from("event-banners").upload(path, file);
+                      if (error) { toast.error("Erro ao enviar imagem", { id: "upload" }); return; }
+                      const { data: { publicUrl } } = supabase.storage.from("event-banners").getPublicUrl(path);
+                      setForm(prev => ({ ...prev, banner_url: publicUrl }));
+                      toast.success("Imagem enviada!", { id: "upload" });
+                    }}
+                  />
+                </label>
+              )}
+              <div>
+                <Label className="text-xs text-muted-foreground">Ou cole uma URL externa:</Label>
+                <Input value={form.banner_url} onChange={e => setForm({ ...form, banner_url: e.target.value })} placeholder="https://..." className="mt-1" />
+              </div>
             </CardContent>
           </Card>
 

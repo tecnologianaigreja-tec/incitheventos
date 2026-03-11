@@ -1,24 +1,48 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { RegistrationData } from "@/lib/types";
+import type { RegistrationData, EventFormField } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Search, CheckCircle, QrCode } from "lucide-react";
+import { Search, CheckCircle } from "lucide-react";
 
 export default function AdminRegistrations() {
   const [registrations, setRegistrations] = useState<RegistrationData[]>([]);
+  const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
   async function load() {
-    let query = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-    const { data } = await query;
-    setRegistrations((data || []) as unknown as RegistrationData[]);
+    const { data } = await supabase.from("registrations").select("*").order("created_at", { ascending: false });
+    const regs = (data || []) as unknown as RegistrationData[];
+    setRegistrations(regs);
+
+    // Load custom fields from the first registration's event (or all events)
+    if (regs.length > 0) {
+      const eventIds = [...new Set(regs.map(r => r.event_id))];
+      const { data: fields } = await supabase
+        .from("event_form_fields")
+        .select("*")
+        .in("event_id", eventIds)
+        .eq("is_active", true)
+        .order("sort_order");
+      if (fields) {
+        // Deduplicate by field_key (same field across events)
+        const seen = new Set<string>();
+        const unique: EventFormField[] = [];
+        for (const f of fields as unknown as EventFormField[]) {
+          if (!seen.has(f.field_key)) {
+            seen.add(f.field_key);
+            unique.push(f);
+          }
+        }
+        setCustomFields(unique);
+      }
+    }
     setLoading(false);
   }
 
@@ -58,6 +82,31 @@ export default function AdminRegistrations() {
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
+  // Get dynamic field value from registration - check known fields first, then cast to any for dynamic
+  const getFieldValue = (reg: RegistrationData, fieldKey: string): string => {
+    // Check if it's a known field on RegistrationData
+    const knownMap: Record<string, keyof RegistrationData> = {
+      phone: "phone",
+      telefone: "phone",
+      birth_date: "birth_date",
+      data_nascimento: "birth_date",
+      congregation: "congregation",
+      congregacao: "congregation",
+      area: "area",
+      church_role: "church_role",
+      funcao_eclesiastica: "church_role",
+      church_function: "church_function",
+      cargo_igreja: "church_function",
+    };
+
+    if (knownMap[fieldKey]) {
+      return (reg[knownMap[fieldKey]] as string) || "—";
+    }
+
+    // For truly dynamic fields stored on the registration record
+    return (reg as any)[fieldKey] || "—";
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
@@ -84,7 +133,10 @@ export default function AdminRegistrations() {
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>E-mail</TableHead>
-              <TableHead>Congregação</TableHead>
+              <TableHead>CPF</TableHead>
+              {customFields.map(f => (
+                <TableHead key={f.field_key}>{f.field_label}</TableHead>
+              ))}
               <TableHead>Tipo</TableHead>
               <TableHead>Pagamento</TableHead>
               <TableHead>Check-in</TableHead>
@@ -96,7 +148,10 @@ export default function AdminRegistrations() {
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.full_name}</TableCell>
                 <TableCell className="text-sm">{r.email}</TableCell>
-                <TableCell className="text-sm">{r.congregation}</TableCell>
+                <TableCell className="text-sm">{r.cpf}</TableCell>
+                {customFields.map(f => (
+                  <TableCell key={f.field_key} className="text-sm">{getFieldValue(r, f.field_key)}</TableCell>
+                ))}
                 <TableCell><Badge variant="secondary">{r.registration_type === "individual" ? "Ind." : "Lote"}</Badge></TableCell>
                 <TableCell>
                   <Badge variant={r.payment_status === "approved" ? "default" : "secondary"}>
@@ -118,7 +173,7 @@ export default function AdminRegistrations() {
               </TableRow>
             ))}
             {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Nenhum inscrito encontrado</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7 + customFields.length} className="text-center py-12 text-muted-foreground">Nenhum inscrito encontrado</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
