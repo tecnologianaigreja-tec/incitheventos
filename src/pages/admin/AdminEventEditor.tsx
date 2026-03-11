@@ -159,6 +159,7 @@ export default function AdminEventEditor() {
       max_participants: form.max_participants ? parseInt(form.max_participants) : null,
       status: form.status,
       banner_url: form.banner_url || null,
+      poster_url: form.poster_url || null,
       template: form.template,
       hero_badge: heroBadge || null,
       about_title: aboutTitle || null,
@@ -169,6 +170,7 @@ export default function AdminEventEditor() {
       cta_title: ctaTitle || null,
       cta_description: ctaDescription || null,
       pricing_label: pricingLabel || null,
+      sections_order: sectionsOrder,
     };
 
     let savedEventId = eventId;
