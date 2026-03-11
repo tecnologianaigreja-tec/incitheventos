@@ -303,8 +303,13 @@ export default function LandingPage() {
                         {event.pricing_label || "Inscrição Individual"}
                       </p>
                       <p className="mb-1 font-serif text-6xl font-bold text-foreground tracking-tight">{formatCentsToBRL(event.unit_price_cents)}</p>
-                      <p className="mb-10 text-sm text-muted-foreground">por participante</p>
-                      {!isClosed && (
+                      <p className="mb-6 text-sm text-muted-foreground">por participante</p>
+                      {showRemainingSpots && remainingSpots !== null && (
+                        <p className={`mb-6 text-sm font-semibold ${isFull ? "text-destructive" : "text-accent"}`}>
+                          {isFull ? "Vagas esgotadas" : `${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
+                        </p>
+                      )}
+                      {!isDisabled && (
                         <Button
                           size="lg"
                           className="w-full py-7 text-lg font-semibold rounded-xl shadow-lg hover:scale-[1.01] transition-transform"
@@ -316,6 +321,9 @@ export default function LandingPage() {
                         >
                           Garantir minha vaga
                         </Button>
+                      )}
+                      {isDisabled && (
+                        <p className="text-lg font-medium text-muted-foreground">{isFull ? "Vagas esgotadas" : "Inscrições encerradas"}</p>
                       )}
                     </CardContent>
                   </Card>
