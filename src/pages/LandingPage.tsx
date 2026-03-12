@@ -165,7 +165,7 @@ export default function LandingPage() {
           </motion.div>
           <motion.div variants={fadeUp}>
             {showRemainingSpots && remainingSpots !== null && !isClosed && (
-              <p className="mb-6 inline-block rounded-full border border-white/15 px-5 py-2 text-sm font-medium" style={{ color: isFull ? '#ef4444' : `hsl(${template.colors.accent})` }}>
+              <p className="mb-6 inline-block rounded-full border border-white/15 px-6 py-3 text-lg md:text-xl font-semibold" style={{ color: isFull ? '#ef4444' : `hsl(${template.colors.accent})` }}>
                 {isFull ? "Vagas esgotadas" : `🔥 ${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
               </p>
             )}
