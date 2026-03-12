@@ -165,7 +165,7 @@ export default function LandingPage() {
           </motion.div>
           <motion.div variants={fadeUp}>
             {showRemainingSpots && remainingSpots !== null && !isClosed && (
-              <p className="mb-6 inline-block rounded-full border border-white/15 px-5 py-2 text-sm font-medium" style={{ color: isFull ? '#ef4444' : `hsl(${template.colors.accent})` }}>
+              <p className="mb-6 inline-block rounded-full border border-white/15 px-6 py-3 text-lg md:text-xl font-semibold" style={{ color: isFull ? '#ef4444' : `hsl(${template.colors.accent})` }}>
                 {isFull ? "Vagas esgotadas" : `🔥 ${remainingSpots} vaga${remainingSpots !== 1 ? "s" : ""} restante${remainingSpots !== 1 ? "s" : ""}`}
               </p>
             )}
@@ -250,13 +250,13 @@ export default function LandingPage() {
         );
 
         if (sectionId === "poster" && hasPoster) return (
-          <section key="poster" className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
-            <motion.div className="container mx-auto max-w-2xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+          <section key="poster" className="px-0 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
+            <motion.div className="mx-auto w-[95%] text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
               <motion.div variants={fadeUp}>
                 <img
                   src={(event as any).poster_url}
                   alt={`Cartaz - ${event.title}`}
-                  className="mx-auto max-w-full rounded-xl shadow-lg"
+                  className="mx-auto w-full rounded-xl shadow-lg"
                 />
               </motion.div>
             </motion.div>
