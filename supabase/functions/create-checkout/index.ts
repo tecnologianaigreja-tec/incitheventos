@@ -283,7 +283,14 @@ async function generatePaymentLink(
   }
 
   try {
-    const checkoutPayload = {
+    // Format phone to international standard +55XXXXXXXXXXX
+    let phoneNumber: string | undefined;
+    if (order.buyer_phone) {
+      const digits = order.buyer_phone.replace(/\D/g, "");
+      phoneNumber = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
+    }
+
+    const checkoutPayload: Record<string, unknown> = {
       handle: infinitepayHandle,
       order_nsu: order.order_nsu,
       amount: order.total_price_cents,
@@ -292,6 +299,11 @@ async function generatePaymentLink(
         quantity: 1,
         price: event.unit_price_cents,
       })),
+      customer: {
+        name: order.buyer_name,
+        email: order.buyer_email,
+        ...(phoneNumber ? { phone_number: phoneNumber } : {}),
+      },
       redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
       webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
     };
