@@ -33,7 +33,11 @@ const KNOWN_FIELD_MAP: Record<string, keyof RegistrationData> = {
 
 export function getFieldValue(reg: RegistrationData, fieldKey: string): string {
   if (KNOWN_FIELD_MAP[fieldKey]) return (reg[KNOWN_FIELD_MAP[fieldKey]] as string) || "";
-  return (reg as any)[fieldKey] || "";
+  // Check direct property first, then custom_fields JSONB
+  if ((reg as any)[fieldKey]) return (reg as any)[fieldKey];
+  const cf = (reg as any).custom_fields;
+  if (cf && typeof cf === "object" && cf[fieldKey]) return cf[fieldKey];
+  return "";
 }
 
 export function applyDynamicFilters(registrations: RegistrationData[], filters: ActiveFilter[]): RegistrationData[] {
