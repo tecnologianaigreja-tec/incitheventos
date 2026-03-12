@@ -4,12 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Filter, X } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Filter, X, ChevronDown } from "lucide-react";
 
 interface ActiveFilter {
   fieldKey: string;
   fieldLabel: string;
-  value: string;
+  value: string; // For multi-select, values are joined with "||"
+  values?: string[]; // Array of selected values
 }
 
 interface DynamicFieldFiltersProps {
@@ -38,6 +41,9 @@ export function applyDynamicFilters(registrations: RegistrationData[], filters: 
   return registrations.filter(r => {
     return filters.every(f => {
       const val = getFieldValue(r, f.fieldKey).toLowerCase();
+      if (f.values && f.values.length > 0) {
+        return f.values.some(v => val === v.toLowerCase());
+      }
       return val.includes(f.value.toLowerCase());
     });
   });
@@ -46,24 +52,53 @@ export function applyDynamicFilters(registrations: RegistrationData[], filters: 
 export default function DynamicFieldFilters({ customFields, activeFilters, onFiltersChange }: DynamicFieldFiltersProps) {
   const [selectedField, setSelectedField] = useState<string>("");
   const [filterValue, setFilterValue] = useState<string>("");
+  const [selectedValues, setSelectedValues] = useState<string[]>([]);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   const selectedFieldDef = customFields.find(f => f.field_key === selectedField);
   const hasOptions = selectedFieldDef?.field_type === "select" && Array.isArray(selectedFieldDef.options) && selectedFieldDef.options.length > 0;
 
+  function toggleValue(opt: string) {
+    setSelectedValues(prev =>
+      prev.includes(opt) ? prev.filter(v => v !== opt) : [...prev, opt]
+    );
+  }
+
   function addFilter() {
-    if (!selectedField || !filterValue) return;
+    if (!selectedField) return;
     const fieldDef = customFields.find(f => f.field_key === selectedField);
-    onFiltersChange([
-      ...activeFilters,
-      { fieldKey: selectedField, fieldLabel: fieldDef?.field_label || selectedField, value: filterValue },
-    ]);
+    const label = fieldDef?.field_label || selectedField;
+
+    if (hasOptions) {
+      if (selectedValues.length === 0) return;
+      onFiltersChange([
+        ...activeFilters,
+        { fieldKey: selectedField, fieldLabel: label, value: selectedValues.join("||"), values: [...selectedValues] },
+      ]);
+      setSelectedValues([]);
+    } else {
+      if (!filterValue) return;
+      onFiltersChange([
+        ...activeFilters,
+        { fieldKey: selectedField, fieldLabel: label, value: filterValue },
+      ]);
+      setFilterValue("");
+    }
     setSelectedField("");
-    setFilterValue("");
+    setPopoverOpen(false);
   }
 
   function removeFilter(index: number) {
     onFiltersChange(activeFilters.filter((_, i) => i !== index));
   }
+
+  function handleFieldChange(v: string) {
+    setSelectedField(v);
+    setFilterValue("");
+    setSelectedValues([]);
+  }
+
+  const canApply = hasOptions ? selectedValues.length > 0 : !!filterValue;
 
   return (
     <div className="space-y-3">
@@ -72,7 +107,7 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
           <label className="text-xs font-medium text-muted-foreground mb-1 block">
             <Filter className="inline h-3 w-3 mr-1" />Filtrar por campo
           </label>
-          <Select value={selectedField} onValueChange={(v) => { setSelectedField(v); setFilterValue(""); }}>
+          <Select value={selectedField} onValueChange={handleFieldChange}>
             <SelectTrigger><SelectValue placeholder="Selecione um campo..." /></SelectTrigger>
             <SelectContent>
               {customFields.map(f => (
@@ -86,14 +121,34 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
           <div className="flex-1">
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Valor</label>
             {hasOptions ? (
-              <Select value={filterValue} onValueChange={setFilterValue}>
-                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                <SelectContent>
-                  {(selectedFieldDef!.options as string[]).map(opt => (
-                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal">
+                    <span className="truncate text-left">
+                      {selectedValues.length === 0
+                        ? "Selecione valores..."
+                        : `${selectedValues.length} selecionado${selectedValues.length > 1 ? "s" : ""}`}
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-2 max-h-60 overflow-y-auto" align="start">
+                  <div className="space-y-1">
+                    {(selectedFieldDef!.options as string[]).map(opt => (
+                      <label
+                        key={opt}
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer hover:bg-muted transition-colors"
+                      >
+                        <Checkbox
+                          checked={selectedValues.includes(opt)}
+                          onCheckedChange={() => toggleValue(opt)}
+                        />
+                        <span>{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             ) : (
               <Input
                 value={filterValue}
@@ -105,7 +160,7 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
           </div>
         )}
 
-        {selectedField && filterValue && (
+        {selectedField && canApply && (
           <Button onClick={addFilter} size="sm" className="gap-1">
             <Filter className="h-3 w-3" /> Aplicar
           </Button>
@@ -117,7 +172,9 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
           {activeFilters.map((f, i) => (
             <Badge key={i} variant="secondary" className="gap-1 pl-3 pr-1 py-1">
               <span className="text-xs font-medium">{f.fieldLabel}:</span>
-              <span className="text-xs">{f.value}</span>
+              <span className="text-xs">
+                {f.values ? f.values.join(", ") : f.value}
+              </span>
               <button
                 onClick={() => removeFilter(i)}
                 className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20 transition-colors"
