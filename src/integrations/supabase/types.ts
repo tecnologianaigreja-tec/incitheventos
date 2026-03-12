@@ -519,6 +519,7 @@ export type Database = {
           consent_terms: boolean
           cpf: string
           created_at: string
+          custom_fields: Json | null
           email: string
           event_id: string
           full_name: string
@@ -548,6 +549,7 @@ export type Database = {
           consent_terms?: boolean
           cpf: string
           created_at?: string
+          custom_fields?: Json | null
           email: string
           event_id: string
           full_name: string
@@ -577,6 +579,7 @@ export type Database = {
           consent_terms?: boolean
           cpf?: string
           created_at?: string
+          custom_fields?: Json | null
           email?: string
           event_id?: string
           full_name?: string
