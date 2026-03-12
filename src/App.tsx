@@ -21,10 +21,12 @@ import AdminCertificates from "./pages/admin/AdminCertificates";
 import AdminExport from "./pages/admin/AdminExport";
 import AdminSiteSettings from "./pages/admin/AdminSiteSettings";
 import NotFound from "./pages/NotFound";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 const App = () => (
+  <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
