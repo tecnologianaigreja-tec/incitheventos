@@ -250,13 +250,13 @@ export default function LandingPage() {
         );
 
         if (sectionId === "poster" && hasPoster) return (
-          <section key="poster" className="px-4 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
-            <motion.div className="container mx-auto max-w-2xl text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
+          <section key="poster" className="px-0 py-20" style={{ backgroundColor: `hsl(${template.colors.secondary})` }}>
+            <motion.div className="mx-auto w-[95%] text-center" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
               <motion.div variants={fadeUp}>
                 <img
                   src={(event as any).poster_url}
                   alt={`Cartaz - ${event.title}`}
-                  className="mx-auto max-w-full rounded-xl shadow-lg"
+                  className="mx-auto w-full rounded-xl shadow-lg"
                 />
               </motion.div>
             </motion.div>
