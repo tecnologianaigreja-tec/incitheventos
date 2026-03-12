@@ -35,7 +35,7 @@ function DynamicField({ field, value, onChange, error }: {
               <SelectValue placeholder={field.placeholder || "Selecione"} />
             </SelectTrigger>
             <SelectContent>
-              {field.options.map(opt => (
+              {(field.options || []).map(opt => (
                 <SelectItem key={opt} value={opt}>{opt}</SelectItem>
               ))}
             </SelectContent>
