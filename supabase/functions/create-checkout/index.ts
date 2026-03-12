@@ -196,26 +196,43 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Erro ao criar pedido" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Known registration columns (fixed fields)
+    const KNOWN_COLUMNS = new Set([
+      "full_name", "email", "phone", "cpf", "birth_date",
+      "area", "congregation", "church_role", "church_function",
+    ]);
+
     // Create individual registrations
-    const registrationInserts = participants.map((p: any) => ({
-      event_id,
-      order_id: order.id,
-      registration_code: generateCode("INS"),
-      full_name: p.full_name.trim(),
-      email: p.email.trim().toLowerCase(),
-      phone: p.phone,
-      cpf: p.cpf.replace(/\D/g, ""),
-      birth_date: p.birth_date || null,
-      area: p.area || null,
-      congregation: p.congregation || null,
-      church_role: p.church_role || null,
-      church_function: p.church_function || null,
-      consent_terms,
-      consent_data_usage,
-      registration_type: purchase_type,
-      registration_status: "pending_payment",
-      payment_status: "pending",
-    }));
+    const registrationInserts = participants.map((p: any) => {
+      // Collect custom fields (anything not in KNOWN_COLUMNS)
+      const customFields: Record<string, string> = {};
+      for (const [key, val] of Object.entries(p)) {
+        if (!KNOWN_COLUMNS.has(key) && typeof val === "string" && val.trim()) {
+          customFields[key] = val.trim();
+        }
+      }
+
+      return {
+        event_id,
+        order_id: order.id,
+        registration_code: generateCode("INS"),
+        full_name: p.full_name.trim(),
+        email: p.email.trim().toLowerCase(),
+        phone: p.phone || null,
+        cpf: p.cpf.replace(/\D/g, ""),
+        birth_date: p.birth_date || null,
+        area: p.area || null,
+        congregation: p.congregation || null,
+        church_role: p.church_role || null,
+        church_function: p.church_function || null,
+        custom_fields: customFields,
+        consent_terms,
+        consent_data_usage,
+        registration_type: purchase_type,
+        registration_status: "pending_payment",
+        payment_status: "pending",
+      };
+    });
 
     const { error: regError } = await supabase
       .from("registrations")
