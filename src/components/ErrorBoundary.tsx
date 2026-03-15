@@ -29,12 +29,20 @@ class ErrorBoundary extends React.Component<Props, State> {
           <div className="text-center space-y-4">
             <h1 className="text-2xl font-bold text-foreground">Algo deu errado</h1>
             <p className="text-muted-foreground">Ocorreu um erro inesperado. Tente novamente.</p>
-            <button
-              onClick={() => { window.location.href = "/"; }}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Voltar ao início
-            </button>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => { window.location.reload(); }}
+                className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Tentar novamente
+              </button>
+              <button
+                onClick={() => { window.location.href = "/"; }}
+                className="inline-flex items-center justify-center rounded-md border border-input bg-background px-6 py-3 text-sm font-medium text-foreground hover:bg-accent"
+              >
+                Voltar ao início
+              </button>
+            </div>
           </div>
         </div>
       );
