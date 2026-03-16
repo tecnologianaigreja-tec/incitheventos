@@ -4,6 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AREAS, CHURCH_ROLES, CHURCH_FUNCTIONS, formatCPF, formatPhone } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import { isIOS } from "@/hooks/use-mobile";
+
+const isIOSDevice = isIOS();
 
 interface Props {
   value: ParticipantForm;
