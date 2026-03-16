@@ -26,7 +26,29 @@ function DynamicField({ field, value, onChange, error }: {
   const errorClass = error ? "border-destructive" : "";
 
   switch (field.field_type) {
-    case "select":
+    case "select": {
+      const validOptions = (field.options || []).filter(opt => typeof opt === "string" && opt.trim() !== "");
+      if (isIOSDevice) {
+        return (
+          <div>
+            <Label>{field.field_label} {field.is_required && "*"}</Label>
+            <select
+              value={value}
+              onChange={e => onChange(e.target.value)}
+              className={cn(
+                "flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+                errorClass
+              )}
+            >
+              <option value="">{field.placeholder || "Selecione"}</option>
+              {validOptions.map((opt, idx) => (
+                <option key={`${opt}-${idx}`} value={opt}>{opt}</option>
+              ))}
+            </select>
+            {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+          </div>
+        );
+      }
       return (
         <div>
           <Label>{field.field_label} {field.is_required && "*"}</Label>
@@ -35,7 +57,7 @@ function DynamicField({ field, value, onChange, error }: {
               <SelectValue placeholder={field.placeholder || "Selecione"} />
             </SelectTrigger>
             <SelectContent>
-              {(field.options || []).filter(opt => typeof opt === "string" && opt.trim() !== "").map((opt, idx) => (
+              {validOptions.map((opt, idx) => (
                 <SelectItem key={`${opt}-${idx}`} value={opt}>{opt}</SelectItem>
               ))}
             </SelectContent>
@@ -43,6 +65,7 @@ function DynamicField({ field, value, onChange, error }: {
           {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
         </div>
       );
+    }
     case "date":
       return (
         <div>
