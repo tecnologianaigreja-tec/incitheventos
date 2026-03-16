@@ -25,6 +25,42 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
     onChange({ ...value, [field]: val });
   };
 
+  const renderSelect = (label: string, val: string, onChangeFn: (v: string) => void, options: string[], errorKey: string) => {
+    if (isIOSDevice) {
+      return (
+        <div>
+          <Label>{label}</Label>
+          <select
+            value={val}
+            onChange={e => onChangeFn(e.target.value)}
+            className={cn(
+              "flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+              errors[errorKey] ? "border-destructive" : ""
+            )}
+          >
+            <option value="">Selecione</option>
+            {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          {errors[errorKey] && <p className="mt-1 text-xs text-destructive">{errors[errorKey]}</p>}
+        </div>
+      );
+    }
+    return (
+      <div>
+        <Label>{label}</Label>
+        <Select value={val} onValueChange={onChangeFn}>
+          <SelectTrigger className={errors[errorKey] ? "border-destructive" : ""}>
+            <SelectValue placeholder="Selecione" />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {errors[errorKey] && <p className="mt-1 text-xs text-destructive">{errors[errorKey]}</p>}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4 rounded-lg border border-border/50 bg-card p-6">
       <h3 className="font-serif text-lg font-semibold text-foreground">{title}</h3>
@@ -85,20 +121,7 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
             onChange={(e) => update("birth_date", e.target.value)}
           />
         </div>
-        <div>
-          <Label>Área *</Label>
-          <Select value={value.area} onValueChange={(v) => update("area", v)}>
-            <SelectTrigger className={errors.area ? "border-destructive" : ""}>
-              <SelectValue placeholder="Selecione" />
-            </SelectTrigger>
-            <SelectContent>
-              {AREAS.map((a) => (
-                <SelectItem key={a} value={a}>{a}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.area && <p className="mt-1 text-xs text-destructive">{errors.area}</p>}
-        </div>
+        {renderSelect("Área *", value.area, (v) => update("area", v), AREAS, "area")}
         <div>
           <Label htmlFor={`${prefix}congregation`}>Congregação *</Label>
           <Input
@@ -110,34 +133,8 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
           />
           {errors.congregation && <p className="mt-1 text-xs text-destructive">{errors.congregation}</p>}
         </div>
-        <div>
-          <Label>Cargo *</Label>
-          <Select value={value.church_role} onValueChange={(v) => update("church_role", v)}>
-            <SelectTrigger className={errors.church_role ? "border-destructive" : ""}>
-              <SelectValue placeholder="Selecione" />
-            </SelectTrigger>
-            <SelectContent>
-              {CHURCH_ROLES.map((r) => (
-                <SelectItem key={r} value={r}>{r}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.church_role && <p className="mt-1 text-xs text-destructive">{errors.church_role}</p>}
-        </div>
-        <div>
-          <Label>Função na igreja *</Label>
-          <Select value={value.church_function} onValueChange={(v) => update("church_function", v)}>
-            <SelectTrigger className={errors.church_function ? "border-destructive" : ""}>
-              <SelectValue placeholder="Selecione" />
-            </SelectTrigger>
-            <SelectContent>
-              {CHURCH_FUNCTIONS.map((f) => (
-                <SelectItem key={f} value={f}>{f}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.church_function && <p className="mt-1 text-xs text-destructive">{errors.church_function}</p>}
-        </div>
+        {renderSelect("Cargo *", value.church_role, (v) => update("church_role", v), CHURCH_ROLES, "church_role")}
+        {renderSelect("Função na igreja *", value.church_function, (v) => update("church_function", v), CHURCH_FUNCTIONS, "church_function")}
       </div>
     </div>
   );
