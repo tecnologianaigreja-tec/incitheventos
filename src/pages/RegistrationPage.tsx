@@ -15,6 +15,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Users, User, Plus, Minus, ArrowLeft, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { isIOS } from "@/hooks/use-mobile";
+
+const isIOSDevice = isIOS();
 
 // ─── Dynamic field rendering component ───
 function DynamicField({ field, value, onChange, error }: {
