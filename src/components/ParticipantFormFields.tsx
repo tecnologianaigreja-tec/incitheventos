@@ -26,7 +26,7 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
   };
 
   const renderSelect = (label: string, val: string, onChangeFn: (v: string) => void, options: string[], errorKey: string) => {
-    if (isIOSDevice) {
+    if (isMobileTouch) {
       return (
         <div>
           <Label>{label}</Label>
