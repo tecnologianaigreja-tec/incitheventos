@@ -16,9 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Users, User, Plus, Minus, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isIOS } from "@/hooks/use-mobile";
+import { isTouchDevice } from "@/hooks/use-mobile";
 
-const isIOSDevice = isIOS();
+const isMobileTouch = isTouchDevice();
 
 // ─── Dynamic field rendering component ───
 function DynamicField({ field, value, onChange, error }: {
@@ -32,7 +32,7 @@ function DynamicField({ field, value, onChange, error }: {
   switch (field.field_type) {
     case "select": {
       const validOptions = (field.options || []).filter(opt => typeof opt === "string" && opt.trim() !== "");
-      if (isIOSDevice) {
+      if (isMobileTouch) {
         return (
           <div>
             <Label>{field.field_label} {field.is_required && "*"}</Label>

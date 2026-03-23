@@ -5,9 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AREAS, CHURCH_ROLES, CHURCH_FUNCTIONS, formatCPF, formatPhone } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { isIOS } from "@/hooks/use-mobile";
+import { isTouchDevice } from "@/hooks/use-mobile";
 
-const isIOSDevice = isIOS();
+const isMobileTouch = isTouchDevice();
 
 interface Props {
   value: ParticipantForm;
@@ -26,7 +26,7 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
   };
 
   const renderSelect = (label: string, val: string, onChangeFn: (v: string) => void, options: string[], errorKey: string) => {
-    if (isIOSDevice) {
+    if (isMobileTouch) {
       return (
         <div>
           <Label>{label}</Label>

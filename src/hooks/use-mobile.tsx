@@ -8,6 +8,11 @@ export function isIOS(): boolean {
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
+export function isTouchDevice(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  return navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+}
+
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
 
