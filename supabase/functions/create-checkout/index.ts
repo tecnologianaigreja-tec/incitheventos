@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: `Já existe inscrição confirmada neste evento para: ${names}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // All existing are pending_payment — resume existing order
+      // All existing are pending_payment — handle based on purchase type
       // For individual registration, resume the single pending order
       if (purchase_type === "individual" && existingRegs.length === 1) {
         const pendingReg = existingRegs[0];
@@ -137,7 +137,6 @@ Deno.serve(async (req) => {
         if (existingOrder && existingOrder.payment_status === "pending") {
           let paymentLink = existingOrder.payment_link;
 
-          // If no payment link, generate a new one
           if (!paymentLink) {
             paymentLink = await generatePaymentLink(supabase, supabaseUrl, event, existingOrder, participants);
             if (paymentLink) {
@@ -158,9 +157,49 @@ Deno.serve(async (req) => {
         }
       }
 
-      // For batch or multiple pending, block with helpful message
-      const names = existingRegs.map((r: any) => r.full_name).join(", ");
-      return new Response(JSON.stringify({ error: `Já existe inscrição pendente neste evento para: ${names}. Consulte suas inscrições para retomar o pagamento.` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // For batch (or individual with multiple pending), auto-cancel old pending records
+      const pendingRegs = existingRegs.filter((r: any) => r.registration_status === "pending_payment");
+      if (pendingRegs.length > 0) {
+        const pendingRegIds = pendingRegs.map((r: any) => r.id);
+        const affectedOrderIds = [...new Set(pendingRegs.map((r: any) => r.order_id))];
+
+        // Cancel the pending registrations
+        await supabase
+          .from("registrations")
+          .update({ registration_status: "canceled", payment_status: "canceled" })
+          .in("id", pendingRegIds);
+
+        // For each affected order, check if all its registrations are now canceled
+        for (const orderId of affectedOrderIds) {
+          const { data: orderRegs } = await supabase
+            .from("registrations")
+            .select("registration_status")
+            .eq("order_id", orderId);
+
+          const allCanceled = orderRegs?.every((r: any) => r.registration_status === "canceled");
+          if (allCanceled) {
+            await supabase
+              .from("orders")
+              .update({ payment_status: "canceled", canceled_at: new Date().toISOString() })
+              .eq("id", orderId)
+              .eq("payment_status", "pending");
+          }
+        }
+
+        // Audit log
+        await supabase.from("audit_logs").insert({
+          action: "pending_registrations_auto_canceled",
+          entity_type: "registration",
+          details: {
+            canceled_registration_ids: pendingRegIds,
+            affected_order_ids: affectedOrderIds,
+            reason: "new_registration_attempt",
+            purchase_type,
+          },
+        });
+
+        console.log(`Auto-canceled ${pendingRegIds.length} pending registrations for new ${purchase_type} attempt`);
+      }
     }
 
     const unitPriceCents = event.unit_price_cents;
