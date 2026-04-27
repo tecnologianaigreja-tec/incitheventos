@@ -63,6 +63,7 @@ export default function EventsListPage() {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // CPF lookup state
   const [lookupOpen, setLookupOpen] = useState(false);
@@ -70,6 +71,21 @@ export default function EventsListPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [registrations, setRegistrations] = useState<RegistrationWithEvent[] | null>(null);
   const [selectedReg, setSelectedReg] = useState<RegistrationWithEvent | null>(null);
+
+  // Batch split payment state
+  const [splitDialogReg, setSplitDialogReg] = useState<RegistrationWithEvent | null>(null);
+  const [splitOrder, setSplitOrder] = useState<{ purchase_type: string; total_price_cents: number; participants_count: number; payment_link: string | null; unit_price_cents: number } | null>(null);
+  const [splitLoading, setSplitLoading] = useState<"individual" | "batch_remaining" | null>(null);
+
+  // Open lookup dialog automatically when redirected with ?lookup=1
+  useEffect(() => {
+    if (searchParams.get("lookup") === "1") {
+      setLookupOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("lookup");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     async function load() {
