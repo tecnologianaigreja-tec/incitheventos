@@ -656,6 +656,52 @@ export default function EventsListPage() {
           </Link>
         </div>
       </footer>
+
+      {/* Split batch payment sub-dialog */}
+      <Dialog open={splitDialogReg !== null} onOpenChange={(o) => { if (!o) { setSplitDialogReg(null); setSplitOrder(null); setSplitLoading(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Como deseja pagar?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Esta inscrição faz parte de um lote pendente. Escolha como deseja prosseguir:
+          </p>
+          {splitOrder && (
+            <div className="mt-2 space-y-3">
+              <button
+                type="button"
+                disabled={splitLoading !== null}
+                onClick={() => handleSplitPayment("individual")}
+                className="w-full rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">Pagar só a minha inscrição</span>
+                  <span className="font-serif text-lg font-bold text-foreground">{formatCentsToBRL(splitOrder.unit_price_cents)}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {splitLoading === "individual" ? "Gerando link individual..." : "Sua inscrição é separada do lote e paga só por você. Os demais continuam pendentes."}
+                </p>
+              </button>
+              <button
+                type="button"
+                disabled={splitLoading !== null}
+                onClick={() => handleSplitPayment("batch_remaining")}
+                className="w-full rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">Pagar o lote completo</span>
+                  <span className="font-serif text-lg font-bold text-foreground">{formatCentsToBRL(splitOrder.total_price_cents)}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {splitLoading === "batch_remaining"
+                    ? "Atualizando link do lote..."
+                    : `Paga as ${splitOrder.participants_count} inscrição(ões) que ainda estão pendentes neste lote.`}
+                </p>
+              </button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
