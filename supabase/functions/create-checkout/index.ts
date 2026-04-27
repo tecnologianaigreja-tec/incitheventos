@@ -276,6 +276,20 @@ Deno.serve(async (req) => {
 
     if (regError) {
       console.error("Registration creation error:", regError);
+      // Rollback: delete the order we just created
+      await supabase.from("orders").delete().eq("id", order.id);
+
+      const isDup = (regError as any).code === "23505" || /duplicate_active_registration/i.test(regError.message || "");
+      if (isDup) {
+        return new Response(
+          JSON.stringify({
+            error: "Já existe inscrição ativa neste evento para um dos CPFs informados. Use 'Consultar minha inscrição' para concluir o pagamento.",
+            code: "duplicate_pending",
+            duplicates: [],
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       return new Response(JSON.stringify({ error: "Erro ao criar inscrições" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
