@@ -1,42 +1,54 @@
-
-
-## Correção: Inscrição em lote bloqueada por registros pendentes
+## Correção: Consulta de inscrição com botão "Buscar" travado
 
 ### Problema identificado
 
-A Edge Function `create-checkout` tem um bug no tratamento de inscrições pendentes para lotes. Na linha 161-163, **toda tentativa de inscrição em lote é bloqueada** se qualquer participante do lote já possui um registro com status `pending_payment` -- seja de uma tentativa anterior de lote ou de uma inscrição individual que não foi concluída.
+Em `src/pages/EventsListPage.tsx`, função `handleCpfLookup` (linhas 94–109):
 
-Fluxo do bug:
-1. Participante A tenta inscrição individual, mas não finaliza o pagamento → fica com status `pending_payment`
-2. Participante B tenta inscrever um lote que inclui Participante A
-3. Backend encontra registro pendente do Participante A e **bloqueia todo o lote** com a mensagem: "Já existe inscrição pendente neste evento para: [nome]"
-4. Não existe lógica de retomada (resume) para lotes, diferente do fluxo individual que retoma o pedido existente
+```ts
+async function handleCpfLookup() {
+  const digits = cpfInput.replace(/\D/g, "");
+  if (!isValidCPF(digits)) return;   // ← retorna SILENCIOSAMENTE
+  setLookupLoading(true);
+  ...
+  const { data } = await supabase.from("registrations")...  // ← ignora erro
+  setRegistrations((data || []) as ...);
+  setLookupLoading(false);
+}
+```
 
-Atualmente no banco existem **8 registros pendentes** que podem estar bloqueando novas inscrições em lote que incluam essas pessoas.
+Três falhas que fazem o botão parecer "travado":
+
+1. **CPF inválido sem feedback**: se o usuário digitar um CPF com dígito verificador errado (mesmo que com 11 dígitos), a função sai sem mostrar nada — o botão "não responde" do ponto de vista do usuário.
+2. **Erro da query ignorado**: a desestruturação só pega `data`, não `error`. Se o PostgREST retornar erro (ex.: timeout, RLS, falha de embed `events(...)`), o usuário vê tela em branco sem aviso.
+3. **Sem `try/catch/finally`**: se a Promise do Supabase rejeitar (rede caiu, CORS), `setLookupLoading(false)` nunca é chamado e o botão fica eternamente em "Buscando…".
+
+Diagnóstico confirmado:
+- Backend ok: query embutida `events(title, ...)` funciona via REST direto, FKs `registrations_event_id_fkey` existem, RLS permite SELECT público em `registrations`.
+- 96 inscrições `confirmed` e 39 `pending_payment` no banco — dados disponíveis.
+- O sintoma "botão travado" nos dois dispositivos é compatível com erro de rede/JS não tratado deixando o `loading=true`.
 
 ### Solução
 
-Modificar a Edge Function `create-checkout` para tratar registros pendentes de forma inteligente em vez de simplesmente bloquear:
+Reescrever `handleCpfLookup` em `src/pages/EventsListPage.tsx` com tratamento robusto:
 
-**Arquivo: `supabase/functions/create-checkout/index.ts`**
+1. **Validar e dar feedback**:
+   - Se CPF vazio → toast "Digite seu CPF".
+   - Se CPF com menos de 11 dígitos → toast "CPF incompleto".
+   - Se algoritmo `isValidCPF` falhar → toast "CPF inválido".
 
-1. **Cancelar registros pendentes antigos antes de criar novos**: quando existirem registros `pending_payment` para CPFs do lote, cancelar automaticamente esses registros antigos (e seus pedidos, se todos os registros do pedido forem cancelados) antes de prosseguir com a nova inscrição. Isso permite que o usuário "recomece" sem ficar travado.
+2. **Garantir reset do loading**: envolver em `try / catch / finally` para que `setLookupLoading(false)` execute mesmo em caso de exceção.
 
-2. **Lógica detalhada**:
-   - Se todos os registros existentes são `pending_payment`: cancelar (`registration_status = 'canceled'`, `payment_status = 'canceled'`)
-   - Se o pedido antigo associado não tem mais nenhum registro ativo: cancelar o pedido também
-   - Após cancelar os antigos, prosseguir normalmente com a criação do novo pedido e registros
-   - Registros `confirmed` continuam bloqueando (comportamento atual preservado)
+3. **Tratar erro do Supabase**: capturar `error` da resposta e mostrar toast "Erro ao consultar. Tente novamente." com `console.error` para diagnóstico.
 
-3. **Log de auditoria**: registrar no `audit_logs` que registros pendentes foram cancelados para permitir nova inscrição
+4. **Fallback no embed `events`**: se o embed falhar (`r.events` undefined em algum item), filtrar esses itens e logar — evita crash no `r.events.title` ao renderizar os cards.
+
+5. **Mesmo tratamento no botão "Pagar"** (linhas ~342–354): a chamada `supabase.from("orders").select(...).single()` também ignora erro e pode travar a navegação. Adicionar `try/catch` e fallback para a página de inscrição.
 
 ### O que NÃO muda
-- Fluxo individual com resume (retomada de pedido pendente) permanece inalterado
-- Validação de CPF confirmado permanece bloqueando
-- Validação de dados, geração de link de pagamento, webhook -- tudo intacto
-- Frontend não precisa de alteração
+- Backend, RLS, Edge Functions, schema do banco — intactos.
+- Layout/UX da modal — preservado.
+- Lógica de credencial PDF — preservada.
 
 ### Escopo
-- 1 arquivo editado: `supabase/functions/create-checkout/index.ts`
-- Alteração cirúrgica no bloco de tratamento de registros pendentes (linhas ~119-164)
-
+- 1 arquivo editado: `src/pages/EventsListPage.tsx` (apenas as funções `handleCpfLookup` e o handler do botão "Pagar").
+- Sem alteração de banco, sem mudança em outras páginas.

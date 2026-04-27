@@ -17,6 +17,7 @@ import {
 import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download, CreditCard } from "lucide-react";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -93,19 +94,55 @@ export default function EventsListPage() {
 
   async function handleCpfLookup() {
     const digits = cpfInput.replace(/\D/g, "");
-    if (!isValidCPF(digits)) return;
+
+    if (!digits) {
+      toast.error("Digite seu CPF");
+      return;
+    }
+    if (digits.length < 11) {
+      toast.error("CPF incompleto. Digite os 11 dígitos.");
+      return;
+    }
+    if (!isValidCPF(digits)) {
+      toast.error("CPF inválido. Verifique os dígitos.");
+      return;
+    }
+
     setLookupLoading(true);
     setRegistrations(null);
     setSelectedReg(null);
 
-    const { data } = await supabase
-      .from("registrations")
-      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
-      .eq("cpf", digits)
-      .in("registration_status", ["confirmed", "pending_payment"]);
+    try {
+      const { data, error } = await supabase
+        .from("registrations")
+        .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+        .eq("cpf", digits)
+        .in("registration_status", ["confirmed", "pending_payment"]);
 
-    setRegistrations((data || []) as unknown as RegistrationWithEvent[]);
-    setLookupLoading(false);
+      if (error) {
+        console.error("Erro ao consultar inscrições:", error);
+        toast.error("Erro ao consultar. Tente novamente em instantes.");
+        setRegistrations([]);
+        return;
+      }
+
+      // Filtra registros sem evento embutido para evitar crash no render
+      const safeRegs = ((data || []) as unknown as RegistrationWithEvent[]).filter((r) => {
+        if (!r.events) {
+          console.warn("Registro sem evento associado:", r.id);
+          return false;
+        }
+        return true;
+      });
+
+      setRegistrations(safeRegs);
+    } catch (err) {
+      console.error("Falha inesperada na consulta:", err);
+      toast.error("Falha de conexão. Verifique sua internet e tente novamente.");
+      setRegistrations([]);
+    } finally {
+      setLookupLoading(false);
+    }
   }
 
   async function handleDownloadCredential(reg: RegistrationWithEvent) {
@@ -341,15 +378,26 @@ export default function EventsListPage() {
                                     className="gap-1 text-xs gradient-gold text-white shadow-gold hover:opacity-90"
                                     onClick={async (e) => {
                                       e.stopPropagation();
-                                      const { data: order } = await supabase
-                                        .from("orders")
-                                        .select("payment_link, order_code")
-                                        .eq("id", r.order_id)
-                                        .single();
-                                      if (order?.payment_link) {
-                                        window.location.href = order.payment_link;
-                                      } else {
-                                        navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                      try {
+                                        const { data: order, error } = await supabase
+                                          .from("orders")
+                                          .select("payment_link, order_code")
+                                          .eq("id", r.order_id)
+                                          .maybeSingle();
+                                        if (error) {
+                                          console.error("Erro ao buscar pedido:", error);
+                                          toast.error("Não foi possível abrir o pagamento. Refazendo a inscrição...");
+                                          navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                          return;
+                                        }
+                                        if (order?.payment_link) {
+                                          window.location.href = order.payment_link;
+                                        } else {
+                                          navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                        }
+                                      } catch (err) {
+                                        console.error("Falha ao abrir pagamento:", err);
+                                        toast.error("Falha de conexão. Tente novamente.");
                                       }
                                     }}
                                   >
