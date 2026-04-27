@@ -397,16 +397,29 @@ export default function EventsListPage() {
                                       try {
                                         const { data: order, error } = await supabase
                                           .from("orders")
-                                          .select("payment_link, order_code")
+                                          .select("payment_link, order_code, purchase_type, total_price_cents, participants_count, unit_price_cents")
                                           .eq("id", r.order_id)
                                           .maybeSingle();
-                                        if (error) {
+                                        if (error || !order) {
                                           console.error("Erro ao buscar pedido:", error);
                                           toast.error("Não foi possível abrir o pagamento. Refazendo a inscrição...");
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
                                           return;
                                         }
-                                        if (order?.payment_link) {
+                                        // Batch order → open split sub-dialog
+                                        if (order.purchase_type === "batch") {
+                                          setSplitOrder({
+                                            purchase_type: order.purchase_type,
+                                            total_price_cents: order.total_price_cents,
+                                            participants_count: order.participants_count,
+                                            payment_link: order.payment_link,
+                                            unit_price_cents: order.unit_price_cents,
+                                          });
+                                          setSplitDialogReg(r);
+                                          return;
+                                        }
+                                        // Individual order → direct redirect
+                                        if (order.payment_link) {
                                           window.location.href = order.payment_link;
                                         } else {
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
