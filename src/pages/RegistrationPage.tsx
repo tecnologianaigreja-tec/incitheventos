@@ -353,7 +353,9 @@ export default function RegistrationPage() {
 
   async function handleSubmit() {
     if (!event) return;
-    if (submitting) return;
+    // Defense in depth against double-submit (state lag + ref guard)
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     if (isFull) { toast.error("Vagas esgotadas para este evento"); return; }
 
     if (tab === "individual") {
