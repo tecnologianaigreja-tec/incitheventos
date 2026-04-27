@@ -1,95 +1,78 @@
-## Pagamento parcial de lote + bloqueio de duplicatas (com proteção total a inscrições pagas)
+# Pagamento em lote dinâmico + confirmação correta de status
 
-### GARANTIA CRÍTICA — inscrições confirmadas/pagas NUNCA serão apagadas
+## Problema
+Quando alguém de um lote paga individualmente (via split), e depois outra pessoa do mesmo lote tenta pagar "o lote completo", precisamos garantir:
+1. O valor cobrado seja **somente** o dos que ainda estão pendentes no lote.
+2. Após o pagamento, **apenas as inscrições ainda pendentes daquele lote** mudem para "pago/confirmado" (sem afetar quem já pagou individualmente).
+3. O link de pagamento do lote sempre seja regenerado quando o conjunto de pendentes mudar.
 
-Antes de qualquer coisa: a Parte 1 (limpeza) **jamais** deleta nem cancela qualquer registration com `payment_status='approved'` OU `registration_status='confirmed'`. As regras abaixo são desenhadas para que, mesmo no caso raro de "2 confirmadas para o mesmo CPF" (José Gilmar), as duas sejam **mantidas** e apenas marcadas para revisão manual do admin — não é tarefa do script decidir qual confirmada apagar quando dinheiro real foi cobrado.
+## Estado atual (verificado no código)
+- `split-batch-payment` (modo `batch_remaining`) **já** recalcula `participants_count`, `total_price_cents` e gera novo `order_nsu` baseado em quem ainda está `pending_payment` no `order_id` original. ✅
+- O webhook `payment-webhook`, ao confirmar, atualiza **todas** as registrations daquele `order_id`. Como quem foi splittado já foi movido para outro `order_id`, isso já está correto. ✅
+- **Gaps reais a corrigir:**
+  - **Bug do e-mail (visto nos logs):** `[split] InfinitePay error: customer.email is in invalid format`. Quando o `buyer_email` original do lote está vazio/inválido, o link não é gerado. Precisa fallback para o e-mail de um participante válido.
+  - **Sem revalidação no webhook:** Se o usuário abrir um link antigo do lote (com valor desatualizado) e pagar, o webhook confirma mesmo assim. Precisa revalidar contra o `total_price_cents` atual da order.
+  - **Sem trava de concorrência:** Se duas pessoas clicarem "Pagar lote" e "Pagar individual" ao mesmo tempo, pode dar inconsistência. Precisa sempre **regenerar o `order_nsu`** ao recalcular (já é feito), e garantir que o link antigo seja inutilizado.
+  - **Recalcular ao consultar:** Quando o usuário abre o diálogo de "Pagar o lote completo" pela tela de consulta, o valor exibido deve já refletir os pendentes (não o total original).
 
----
+## O que será feito
 
-### PARTE 1 — Limpeza de duplicatas (super conservadora)
+### 1. Corrigir geração do link no `split-batch-payment`
+- Em `generatePaymentLink`, se `order.buyer_email` estiver vazio ou inválido, usar o e-mail do primeiro participante pendente como `customer.email`.
+- Mesmo fallback aplicar para `buyer_name` se vazio.
 
-Para cada par `(cpf, event_id)` com mais de uma registration:
+### 2. Recalcular o lote SEMPRE que gerar/regenerar link de lote pendente
+Adicionar uma função utilitária `recalculateBatchOrder(order_id)` no `split-batch-payment` que:
+- Conta registrations com `registration_status = 'pending_payment'` ligadas ao `order_id`.
+- Atualiza `participants_count`, `total_price_cents = count * unit_price_cents`, gera novo `order_nsu` e limpa `payment_link` antigo.
+- Retorna a contagem e o novo total.
+- Se contagem = 0, marca a order como `canceled`.
 
-**Regra A — existe pelo menos 1 confirmada/paga:**
-- **Mantém intactas TODAS as confirmadas/pagas** (não toca em nenhuma).
-- Cancela apenas as registrations com status `pending_payment` desse CPF (porque já existe uma paga, a pendente é redundante).
-- Se houver 2+ confirmadas para o mesmo CPF (caso José Gilmar), **NÃO mexe em nenhuma**. Apenas registra no `audit_logs` com `action='duplicate_confirmed_needs_review'` para o admin revisar manualmente. O script não decide.
+Já existe lógica parecida; vamos consolidar e garantir uso em ambos os modos (`individual` e `batch_remaining`) e também sempre que a UI consultar o lote para pagamento.
 
-**Regra B — só pendentes (nenhuma confirmada):**
-- Mantém a pendente **mais antiga** (preserva o `order_id` original e o link de pagamento já gerado).
-- Cancela as demais pendentes (mais recentes).
+### 3. Endpoint de "preview" do lote
+Adicionar um modo `preview` no `split-batch-payment` (ou um novo endpoint leve `get-batch-status`) que apenas:
+- Recalcula e retorna `{ remaining_count, remaining_total_cents, remaining_participants: [{name, cpf_masked}] }`.
+- Não regenera link ainda — apenas mostra ao usuário antes de ele confirmar.
 
-**Salvaguardas técnicas obrigatórias na migration:**
-- A query de UPDATE terá cláusula explícita `WHERE registration_status = 'pending_payment' AND payment_status != 'approved'` — duplo filtro, defesa em profundidade.
-- Antes do UPDATE, um `SELECT` de verificação contando quantas confirmadas seriam afetadas. Se o número for > 0, a migration **aborta com erro** (transaction rollback) sem aplicar nada.
-- Toda a operação dentro de uma única transação BEGIN/COMMIT.
-- Audit log de cada cancelamento com motivo `duplicate_cleanup_pending_only` e o ID da registration mantida.
-- Para orders cujas registrations ficaram 100% canceladas, marcar order como `canceled` — mas **só** se nenhuma registration daquele order estiver confirmada (verificação extra).
+A UI de consulta (`EventsListPage`) chamará esse preview ao abrir o diálogo de pagamento de lote, exibindo o valor atualizado e a lista de quem ainda falta pagar. Quando o usuário clicar "Pagar lote completo", aí sim chama `mode: batch_remaining` para gerar o link.
 
-**Resumo dos 8 casos do banco (após auditoria):**
-| CPF | Antes | Depois |
-|---|---|---|
-| SARA COSTA (5 pend) | 5 pendentes | 1 mantida, 4 canceladas |
-| Matheus Gomes (1 conf + 2 pend) | 1 confirmada + 2 pendentes | **1 confirmada intacta** + 2 canceladas |
-| Claudiane (1 conf + 1 pend) | 1 confirmada + 1 pendente | **1 confirmada intacta** + 1 cancelada |
-| José Gilmar (2 conf) | 2 confirmadas | **2 confirmadas intactas** + log para revisão manual |
-| 5 lotes (2 pend cada) | 2 pendentes | 1 mantida, 1 cancelada |
+### 4. Validação de valor no `payment-webhook`
+Antes de marcar como `approved`:
+- Comparar `payload.paid_amount` com `order.total_price_cents` atual.
+- Se `paid_amount < total_price_cents` (caso o usuário pagou um link antigo com valor menor), **logar warning** mas ainda confirmar (InfinitePay já recebeu o dinheiro). Registrar em `audit_logs` a discrepância.
+- Se `paid_amount > total_price_cents` (link antigo com mais gente, mas alguns já pagaram individualmente nesse meio tempo), confirmar normalmente — quem pagou individual já está confirmado em outra order; os pendentes da batch atual recebem o status `approved` corretamente (o webhook só atualiza registrations daquele `order_id`).
+- **Não rebaixar:** se a order já está `approved`, não fazer nada (já existe).
 
-Zero registration paga será cancelada. Zero.
+### 5. UI: atualizar diálogo de "Pagar lote completo"
+Em `EventsListPage.tsx`, no diálogo de batch:
+- Ao abrir, chamar o preview e exibir: "Faltam pagar X inscrições — Total atualizado: R$ Y,YY" e lista dos nomes pendentes.
+- Botão "Pagar lote completo" usa o valor atualizado.
 
----
+## Resumo técnico (para revisão)
 
-### PARTE 2 — Bloqueio definitivo de novas duplicatas
+```text
+Fluxo garantido:
+[Lote criado: 5 pessoas, R$500] 
+   ↓ Pessoa A clica "Pagar só a minha"
+[split → individual] → Order nova A (R$100), Order original recalc (4 pessoas, R$400, novo NSU)
+   ↓ Pessoa A paga
+[webhook] → atualiza apenas registrations da Order A → A=confirmed
+   ↓ Pessoa B (do lote) abre consulta → escolhe "Pagar lote completo"
+[preview] → mostra "4 pendentes, R$400" 
+   ↓ B confirma
+[batch_remaining] → recalc novamente (caso outro tenha splittado), regera link
+   ↓ B paga R$400
+[webhook] → atualiza as 4 registrations restantes → todas=confirmed
+   ↓ Pessoa A já estava confirmada, intocada ✅
+```
 
-**Migration:**
-- Índice único parcial: `UNIQUE (cpf, event_id) WHERE registration_status IN ('pending_payment', 'confirmed')`. Barreira atômica no banco.
-- Coluna `parent_order_id uuid` em `orders` (nullable) com índice — usado pelo split (Parte 3).
+## Arquivos afetados
+- `supabase/functions/split-batch-payment/index.ts` — fallback de e-mail/nome, função `recalculateBatchOrder` consolidada, modo `preview`.
+- `supabase/functions/payment-webhook/index.ts` — log de discrepância de valor, audit.
+- `src/pages/EventsListPage.tsx` — chamar preview ao abrir diálogo, exibir valor atualizado + lista de pendentes.
 
-**Edge Function `create-checkout`:**
-- Confirmada existente para qualquer CPF do request → erro `409` listando os nomes, instruindo consultar pelo CPF.
-- Pendente existente:
-  - Individual com 1 pendente do mesmo CPF do mesmo tipo individual → resume comportamento atual (retorna link existente).
-  - Qualquer outro caso (lote com pendente, individual sobre pendente de lote, etc.) → erro `409` instruindo consulta por CPF para pagar a pendente. Hoje auto-cancela; passa a bloquear.
-- Resposta 409 estruturada: `{ duplicates: [{ name, cpf_masked, status }] }`.
-- Captura erro `23505` (violação de índice único) como fallback retornando 409.
-
-**Frontend `RegistrationPage.tsx`:**
-- Trata 409 com modal claro listando os nomes e botão "Consultar minha inscrição" levando para `/` com diálogo de consulta aberto.
-- `useRef` de flag de submissão + `disabled` no botão durante request — defesa em camadas contra cliques duplos (causa raiz dos 5 cadastros simultâneos da SARA).
-
----
-
-### PARTE 3 — Split de pagamento de lote
-
-**Edge Function nova `split-batch-payment`:**
-- Input: `registration_id`, `mode: "individual" | "batch_remaining"`.
-- Modo `individual`: cria novo order (purchase_type=individual, parent_order_id=lote), move a registration, recalcula lote remanescente (count + total), regenera `order_nsu` e `payment_link` do lote, gera link novo do individual. Idempotente.
-- Modo `batch_remaining`: regenera/retorna o link do lote já recalculado.
-- Validações: registration `pending_payment`, order original `batch` e `pending`, evento publicado.
-- Audit log de cada split.
-
-**Webhook `payment-webhook`:** sem mudança de lógica (já confirma só registrations do `order_id` recebido). Log adicional quando `parent_order_id` está presente.
-
-**Frontend `EventsListPage.tsx`:**
-- Botão "Pagar" em pendente de **lote** → sub-diálogo com 2 opções:
-  - "Pagar só a minha inscrição" (valor unitário) → `split-batch-payment` modo `individual`.
-  - "Pagar o lote completo" (valor recalculado) → modo `batch_remaining`.
-- Pendente individual → comportamento atual.
-
----
-
-### O que NÃO muda
-
-- Inscrições confirmadas/pagas: **intocadas** em qualquer cenário.
-- RLS, auth, schema das outras tabelas, admin, certificados, check-in, PDF.
-- Preços, capacidade, validação de CPF.
-- Webhook como única fonte da verdade de pagamento.
-- Resume de pendente individual continua funcionando.
-
-### Escopo de arquivos
-
-- **2 migrações**: limpeza conservadora de duplicatas; índice único + `parent_order_id`.
-- **1 Edge Function nova**: `split-batch-payment`.
-- **1 Edge Function ajustada**: `create-checkout` (409 estruturado, sem auto-cancelar).
-- **1 Edge Function com log**: `payment-webhook` (mínimo).
-- **2 frontends**: `EventsListPage.tsx` (sub-diálogo de split), `RegistrationPage.tsx` (tratamento 409 + anti-duplo-submit).
+## Não será feito
+- Não mudaremos schema do banco (não é necessário).
+- Não tocaremos no fluxo de duplicidade já implementado.
+- Não tocaremos no checkout individual normal.
