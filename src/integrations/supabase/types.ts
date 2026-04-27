@@ -385,6 +385,7 @@ export type Database = {
           order_code: string
           order_nsu: string | null
           paid_at: string | null
+          parent_order_id: string | null
           participants_count: number
           payment_link: string | null
           payment_provider: string | null
@@ -411,6 +412,7 @@ export type Database = {
           order_code: string
           order_nsu?: string | null
           paid_at?: string | null
+          parent_order_id?: string | null
           participants_count?: number
           payment_link?: string | null
           payment_provider?: string | null
@@ -437,6 +439,7 @@ export type Database = {
           order_code?: string
           order_nsu?: string | null
           paid_at?: string | null
+          parent_order_id?: string | null
           participants_count?: number
           payment_link?: string | null
           payment_provider?: string | null
@@ -455,6 +458,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_parent_order_id_fkey"
+            columns: ["parent_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]

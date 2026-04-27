@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData, EventFormField, ParticipantForm } from "@/lib/types";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -278,6 +279,12 @@ export default function RegistrationPage() {
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [duplicateModal, setDuplicateModal] = useState<{
+    title: string;
+    message: string;
+    duplicates: { name: string; cpf_masked: string; status: string }[];
+  } | null>(null);
   const [tab, setTab] = useState<"individual" | "batch">("individual");
   const [registrationCount, setRegistrationCount] = useState(0);
 
@@ -347,7 +354,9 @@ export default function RegistrationPage() {
 
   async function handleSubmit() {
     if (!event) return;
-    if (submitting) return;
+    // Defense in depth against double-submit (state lag + ref guard)
+    if (submitting || submittingRef.current) return;
+    submittingRef.current = true;
     if (isFull) { toast.error("Vagas esgotadas para este evento"); return; }
 
     if (tab === "individual") {
@@ -441,8 +450,17 @@ export default function RegistrationPage() {
       const result = await res.json();
 
       if (!res.ok) {
-        toast.error(result.error || "Erro ao processar inscrição");
+        if (res.status === 409 && (result.code === "duplicate_pending" || result.code === "duplicate_confirmed")) {
+          setDuplicateModal({
+            title: result.code === "duplicate_confirmed" ? "Inscrição já confirmada" : "Inscrição pendente",
+            message: result.error || "CPF já cadastrado neste evento.",
+            duplicates: Array.isArray(result.duplicates) ? result.duplicates : [],
+          });
+        } else {
+          toast.error(result.error || "Erro ao processar inscrição");
+        }
         setSubmitting(false);
+        submittingRef.current = false;
         return;
       }
 
@@ -455,6 +473,7 @@ export default function RegistrationPage() {
     } catch {
       toast.error("Erro de conexão. Tente novamente.");
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 
@@ -620,6 +639,37 @@ export default function RegistrationPage() {
           )}
         </Button>
       </div>
+
+      {/* Duplicate registration modal */}
+      <Dialog open={duplicateModal !== null} onOpenChange={(o) => { if (!o) setDuplicateModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{duplicateModal?.title}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{duplicateModal?.message}</p>
+          {duplicateModal?.duplicates && duplicateModal.duplicates.length > 0 && (
+            <ul className="mt-2 space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
+              {duplicateModal.duplicates.map((d, i) => (
+                <li key={i} className="flex items-center justify-between">
+                  <span className="font-medium text-foreground">{d.name}</span>
+                  <span className="text-xs text-muted-foreground">{d.cpf_masked}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setDuplicateModal(null)}>Fechar</Button>
+            <Button
+              onClick={() => {
+                setDuplicateModal(null);
+                navigate("/?lookup=1");
+              }}
+            >
+              Consultar minha inscrição
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

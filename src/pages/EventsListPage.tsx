@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData } from "@/lib/types";
 import { formatCentsToBRL, formatCPF, isValidCPF } from "@/lib/constants";
@@ -63,6 +63,7 @@ export default function EventsListPage() {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // CPF lookup state
   const [lookupOpen, setLookupOpen] = useState(false);
@@ -70,6 +71,21 @@ export default function EventsListPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [registrations, setRegistrations] = useState<RegistrationWithEvent[] | null>(null);
   const [selectedReg, setSelectedReg] = useState<RegistrationWithEvent | null>(null);
+
+  // Batch split payment state
+  const [splitDialogReg, setSplitDialogReg] = useState<RegistrationWithEvent | null>(null);
+  const [splitOrder, setSplitOrder] = useState<{ purchase_type: string; total_price_cents: number; participants_count: number; payment_link: string | null; unit_price_cents: number } | null>(null);
+  const [splitLoading, setSplitLoading] = useState<"individual" | "batch_remaining" | null>(null);
+
+  // Open lookup dialog automatically when redirected with ?lookup=1
+  useEffect(() => {
+    if (searchParams.get("lookup") === "1") {
+      setLookupOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("lookup");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     async function load() {
@@ -145,6 +161,40 @@ export default function EventsListPage() {
     }
   }
 
+  async function handleSplitPayment(mode: "individual" | "batch_remaining") {
+    if (!splitDialogReg) return;
+    setSplitLoading(mode);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/split-batch-payment`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ registration_id: splitDialogReg.id, mode }),
+        }
+      );
+      const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.error || "Não foi possível gerar o pagamento.");
+        setSplitLoading(null);
+        return;
+      }
+      if (result.payment_link) {
+        window.location.href = result.payment_link;
+      } else {
+        toast.error("Pagamento gerado, mas sem link disponível. Contate o suporte.");
+        setSplitLoading(null);
+      }
+    } catch (err) {
+      console.error("Falha ao gerar split:", err);
+      toast.error("Falha de conexão. Tente novamente.");
+      setSplitLoading(null);
+    }
+  }
   async function handleDownloadCredential(reg: RegistrationWithEvent) {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "mm", format: [105, 148] });
@@ -381,16 +431,29 @@ export default function EventsListPage() {
                                       try {
                                         const { data: order, error } = await supabase
                                           .from("orders")
-                                          .select("payment_link, order_code")
+                                          .select("payment_link, order_code, purchase_type, total_price_cents, participants_count, unit_price_cents")
                                           .eq("id", r.order_id)
                                           .maybeSingle();
-                                        if (error) {
+                                        if (error || !order) {
                                           console.error("Erro ao buscar pedido:", error);
                                           toast.error("Não foi possível abrir o pagamento. Refazendo a inscrição...");
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
                                           return;
                                         }
-                                        if (order?.payment_link) {
+                                        // Batch order → open split sub-dialog
+                                        if (order.purchase_type === "batch") {
+                                          setSplitOrder({
+                                            purchase_type: order.purchase_type,
+                                            total_price_cents: order.total_price_cents,
+                                            participants_count: order.participants_count,
+                                            payment_link: order.payment_link,
+                                            unit_price_cents: order.unit_price_cents,
+                                          });
+                                          setSplitDialogReg(r);
+                                          return;
+                                        }
+                                        // Individual order → direct redirect
+                                        if (order.payment_link) {
                                           window.location.href = order.payment_link;
                                         } else {
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
@@ -593,6 +656,52 @@ export default function EventsListPage() {
           </Link>
         </div>
       </footer>
+
+      {/* Split batch payment sub-dialog */}
+      <Dialog open={splitDialogReg !== null} onOpenChange={(o) => { if (!o) { setSplitDialogReg(null); setSplitOrder(null); setSplitLoading(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Como deseja pagar?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Esta inscrição faz parte de um lote pendente. Escolha como deseja prosseguir:
+          </p>
+          {splitOrder && (
+            <div className="mt-2 space-y-3">
+              <button
+                type="button"
+                disabled={splitLoading !== null}
+                onClick={() => handleSplitPayment("individual")}
+                className="w-full rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">Pagar só a minha inscrição</span>
+                  <span className="font-serif text-lg font-bold text-foreground">{formatCentsToBRL(splitOrder.unit_price_cents)}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {splitLoading === "individual" ? "Gerando link individual..." : "Sua inscrição é separada do lote e paga só por você. Os demais continuam pendentes."}
+                </p>
+              </button>
+              <button
+                type="button"
+                disabled={splitLoading !== null}
+                onClick={() => handleSplitPayment("batch_remaining")}
+                className="w-full rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md disabled:opacity-60"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-foreground">Pagar o lote completo</span>
+                  <span className="font-serif text-lg font-bold text-foreground">{formatCentsToBRL(splitOrder.total_price_cents)}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {splitLoading === "batch_remaining"
+                    ? "Atualizando link do lote..."
+                    : `Paga as ${splitOrder.participants_count} inscrição(ões) que ainda estão pendentes neste lote.`}
+                </p>
+              </button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
