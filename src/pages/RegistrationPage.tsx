@@ -639,6 +639,37 @@ export default function RegistrationPage() {
           )}
         </Button>
       </div>
+
+      {/* Duplicate registration modal */}
+      <Dialog open={duplicateModal !== null} onOpenChange={(o) => { if (!o) setDuplicateModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{duplicateModal?.title}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{duplicateModal?.message}</p>
+          {duplicateModal?.duplicates && duplicateModal.duplicates.length > 0 && (
+            <ul className="mt-2 space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
+              {duplicateModal.duplicates.map((d, i) => (
+                <li key={i} className="flex items-center justify-between">
+                  <span className="font-medium text-foreground">{d.name}</span>
+                  <span className="text-xs text-muted-foreground">{d.cpf_masked}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setDuplicateModal(null)}>Fechar</Button>
+            <Button
+              onClick={() => {
+                setDuplicateModal(null);
+                navigate("/?lookup=1");
+              }}
+            >
+              Consultar minha inscrição
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
