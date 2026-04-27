@@ -161,7 +161,41 @@ export default function EventsListPage() {
     }
   }
 
-  async function handleDownloadCredential(reg: RegistrationWithEvent) {
+  async function handleSplitPayment(mode: "individual" | "batch_remaining") {
+    if (!splitDialogReg) return;
+    setSplitLoading(mode);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/split-batch-payment`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ registration_id: splitDialogReg.id, mode }),
+        }
+      );
+      const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.error || "Não foi possível gerar o pagamento.");
+        setSplitLoading(null);
+        return;
+      }
+      if (result.payment_link) {
+        window.location.href = result.payment_link;
+      } else {
+        toast.error("Pagamento gerado, mas sem link disponível. Contate o suporte.");
+        setSplitLoading(null);
+      }
+    } catch (err) {
+      console.error("Falha ao gerar split:", err);
+      toast.error("Falha de conexão. Tente novamente.");
+      setSplitLoading(null);
+    }
+  }
+
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "mm", format: [105, 148] });
 
