@@ -283,8 +283,14 @@ export default function AdminRegistrations() {
                 <TableCell className="text-sm">{r.cpf}</TableCell>
                 <TableCell><Badge variant="secondary">{r.registration_type === "individual" ? "Ind." : "Lote"}</Badge></TableCell>
                 <TableCell>
-                  <Badge variant={r.payment_status === "approved" ? "default" : "secondary"}>
-                    {r.payment_status === "approved" ? "Pago" : "Pendente"}
+                  <Badge variant={
+                    r.registration_status === "canceled" ? "destructive"
+                      : r.payment_status === "approved" ? "default"
+                      : "secondary"
+                  }>
+                    {r.registration_status === "canceled"
+                      ? "Cancelado"
+                      : r.payment_status === "approved" ? "Pago" : "Pendente"}
                   </Badge>
                 </TableCell>
                 <TableCell>
