@@ -193,6 +193,30 @@ Deno.serve(async (req) => {
       return respond({ message: "Order already approved" });
     }
 
+    // ── Amount validation: detect mismatch with current order total ──
+    // (e.g. user paid an old batch link before someone splittered out)
+    if (paymentStatus === "approved" && typeof payload.paid_amount === "number") {
+      const expected = order.total_price_cents;
+      const paid = payload.paid_amount;
+      if (paid !== expected) {
+        console.warn("[webhook] Amount mismatch — paid:", paid, "expected:", expected, "order:", order.id);
+        await supabase.from("audit_logs").insert({
+          action: "payment_amount_mismatch",
+          entity_type: "order",
+          entity_id: order.id,
+          details: {
+            paid_amount_cents: paid,
+            expected_amount_cents: expected,
+            difference_cents: paid - expected,
+            order_code: order.order_code,
+            note: paid > expected
+              ? "Cliente pagou link antigo do lote (alguém splittou no meio); confirmando os pendentes restantes desta order"
+              : "Pagou valor inferior ao atual; confirmando mesmo assim pois InfinitePay já recebeu",
+          },
+        });
+      }
+    }
+
     // ── Update order ─────────────────────────────────────────────────
     const orderUpdate: Record<string, any> = {
       payment_status: paymentStatus,

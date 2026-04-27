@@ -14,6 +14,17 @@ function generateCode(prefix: string, length = 8): string {
   return result;
 }
 
+function isValidEmail(email: string | null | undefined): boolean {
+  if (!email || typeof email !== "string") return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function maskCpf(c: string | null | undefined): string {
+  const d = (c || "").replace(/\D/g, "");
+  if (d.length !== 11) return "***";
+  return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
+}
+
 const respond = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -30,9 +41,27 @@ async function generatePaymentLink(
   const appUrl = Deno.env.get("APP_URL") || "https://incitheventos.lovable.app";
   if (!handle) return null;
 
+  // ── Email fallback: original buyer email may be empty/invalid ──
+  let customerEmail = order.buyer_email;
+  if (!isValidEmail(customerEmail)) {
+    const fallback = participants.find((p: any) => isValidEmail(p.email));
+    customerEmail = fallback?.email || null;
+  }
+  if (!isValidEmail(customerEmail)) {
+    console.error("[split] No valid email for checkout — order:", order.id);
+    return null;
+  }
+
+  // ── Name fallback ──
+  let customerName = order.buyer_name;
+  if (!customerName || !customerName.trim()) {
+    customerName = participants[0]?.full_name || "Comprador";
+  }
+
   let phoneNumber: string | undefined;
-  if (order.buyer_phone) {
-    const digits = order.buyer_phone.replace(/\D/g, "");
+  const rawPhone = order.buyer_phone || participants.find((p: any) => p.phone)?.phone;
+  if (rawPhone) {
+    const digits = rawPhone.replace(/\D/g, "");
     phoneNumber = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
   }
 
@@ -46,8 +75,8 @@ async function generatePaymentLink(
       price: event.unit_price_cents,
     })),
     customer: {
-      name: order.buyer_name,
-      email: order.buyer_email,
+      name: customerName,
+      email: customerEmail,
       ...(phoneNumber ? { phone_number: phoneNumber } : {}),
     },
     redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
@@ -70,6 +99,58 @@ async function generatePaymentLink(
   }
 }
 
+/**
+ * Recalculate a batch order based on registrations still pending payment.
+ * Returns the refreshed order + the list of pending registrations.
+ * Generates a fresh order_nsu and clears the old payment_link so any old
+ * checkout link becomes obsolete.
+ * If no pending remain, marks the order as canceled.
+ */
+async function recalculateBatchOrder(
+  supabase: any,
+  orderId: string,
+  unitPriceCents: number
+): Promise<{ count: number; total_cents: number; new_order_nsu: string; pending_regs: any[] }> {
+  const { data: pendingRegs } = await supabase
+    .from("registrations")
+    .select("*")
+    .eq("order_id", orderId)
+    .eq("registration_status", "pending_payment")
+    .order("created_at", { ascending: true });
+
+  const list = pendingRegs || [];
+  const count = list.length;
+  const total = count * unitPriceCents;
+  const newNsu = generateCode("NSU");
+
+  if (count === 0) {
+    await supabase
+      .from("orders")
+      .update({
+        payment_status: "canceled",
+        canceled_at: new Date().toISOString(),
+        participants_count: 0,
+        total_price_cents: 0,
+        payment_link: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", orderId);
+  } else {
+    await supabase
+      .from("orders")
+      .update({
+        participants_count: count,
+        total_price_cents: total,
+        order_nsu: newNsu,
+        payment_link: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", orderId);
+  }
+
+  return { count, total_cents: total, new_order_nsu: newNsu, pending_regs: list };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -84,8 +165,8 @@ Deno.serve(async (req) => {
     if (!registration_id || typeof registration_id !== "string") {
       return respond({ error: "registration_id obrigatório" }, 400);
     }
-    if (mode !== "individual" && mode !== "batch_remaining") {
-      return respond({ error: "mode deve ser 'individual' ou 'batch_remaining'" }, 400);
+    if (!["individual", "batch_remaining", "preview"].includes(mode)) {
+      return respond({ error: "mode deve ser 'individual', 'batch_remaining' ou 'preview'" }, 400);
     }
 
     // 1) Load registration
@@ -134,44 +215,40 @@ Deno.serve(async (req) => {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // MODE: batch_remaining → recalculate batch and return its link
+    // MODE: preview → just recalculate and report (no link generated)
+    // ─────────────────────────────────────────────────────────────────
+    if (mode === "preview") {
+      const recalc = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents);
+      return respond({
+        order_code: originalOrder.order_code,
+        unit_price_cents: event.unit_price_cents,
+        remaining_count: recalc.count,
+        remaining_total_cents: recalc.total_cents,
+        remaining_participants: recalc.pending_regs.map((r: any) => ({
+          id: r.id,
+          name: r.full_name,
+          cpf_masked: maskCpf(r.cpf),
+        })),
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MODE: batch_remaining → recalculate + generate link for the lot
     // ─────────────────────────────────────────────────────────────────
     if (mode === "batch_remaining") {
-      // Count remaining pending registrations in the original batch
-      const { data: remainingRegs } = await supabase
-        .from("registrations")
-        .select("id, full_name")
-        .eq("order_id", originalOrder.id)
-        .eq("registration_status", "pending_payment");
+      const recalc = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents);
 
-      if (!remainingRegs || remainingRegs.length === 0) {
+      if (recalc.count === 0) {
         return respond({ error: "Não há inscrições pendentes neste lote" }, 400);
       }
 
-      const newCount = remainingRegs.length;
-      const newTotalCents = newCount * event.unit_price_cents;
-      const newOrderNsu = generateCode("NSU");
-
-      // Update the original order: regenerate NSU so InfinitePay treats as new checkout
-      await supabase
-        .from("orders")
-        .update({
-          participants_count: newCount,
-          total_price_cents: newTotalCents,
-          order_nsu: newOrderNsu,
-          payment_link: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", originalOrder.id);
-
-      // Get full registrations for the link
-      const { data: regsForLink } = await supabase
-        .from("registrations")
-        .select("*")
-        .in("id", remainingRegs.map((r: any) => r.id));
-
-      const refreshed = { ...originalOrder, order_nsu: newOrderNsu, total_price_cents: newTotalCents };
-      const link = await generatePaymentLink(supabaseUrl, event, refreshed, regsForLink || []);
+      const refreshed = {
+        ...originalOrder,
+        order_nsu: recalc.new_order_nsu,
+        total_price_cents: recalc.total_cents,
+        participants_count: recalc.count,
+      };
+      const link = await generatePaymentLink(supabaseUrl, event, refreshed, recalc.pending_regs);
 
       if (link) {
         await supabase.from("orders").update({ payment_link: link }).eq("id", originalOrder.id);
@@ -182,17 +259,18 @@ Deno.serve(async (req) => {
         entity_type: "order",
         entity_id: originalOrder.id,
         details: {
-          remaining_count: newCount,
-          new_total_cents: newTotalCents,
-          new_order_nsu: newOrderNsu,
+          remaining_count: recalc.count,
+          new_total_cents: recalc.total_cents,
+          new_order_nsu: recalc.new_order_nsu,
+          link_generated: !!link,
         },
       });
 
       return respond({
         payment_link: link,
         order_code: originalOrder.order_code,
-        total_price_cents: newTotalCents,
-        participants_count: newCount,
+        total_price_cents: recalc.total_cents,
+        participants_count: recalc.count,
       });
     }
 
@@ -200,27 +278,15 @@ Deno.serve(async (req) => {
     // MODE: individual → split this registration into its own order
     // ─────────────────────────────────────────────────────────────────
 
-    // Idempotency: if this registration was already split (already in an
-    // individual order with parent_order_id), return its existing link.
-    if (
-      originalOrder.purchase_type === "batch" &&
-      originalOrder.parent_order_id !== null &&
-      originalOrder.participants_count === 1
-    ) {
-      // shouldn't happen but safe fallback
-      return respond({
-        payment_link: originalOrder.payment_link,
-        order_code: originalOrder.order_code,
-        total_price_cents: originalOrder.total_price_cents,
-        participants_count: 1,
-        already_split: true,
-      });
-    }
-
     // Create new individual order
     const newOrderCode = generateCode("PED");
     const newOrderNsu = generateCode("NSU");
     const unitPrice = event.unit_price_cents;
+
+    // Pick a valid email for the new individual order
+    const indivEmail = isValidEmail(registration.email)
+      ? registration.email
+      : (isValidEmail(originalOrder.buyer_email) ? originalOrder.buyer_email : null);
 
     const { data: newOrder, error: newOrderError } = await supabase
       .from("orders")
@@ -231,7 +297,7 @@ Deno.serve(async (req) => {
         purchase_type: "individual",
         parent_order_id: originalOrder.id,
         buyer_name: registration.full_name,
-        buyer_email: registration.email,
+        buyer_email: indivEmail || registration.email || "",
         buyer_phone: registration.phone || originalOrder.buyer_phone,
         buyer_document: registration.cpf,
         buyer_is_participant: true,
@@ -265,39 +331,8 @@ Deno.serve(async (req) => {
       return respond({ error: "Erro ao mover inscrição para novo pedido" }, 500);
     }
 
-    // Recalculate the original batch order
-    const { data: stillPending } = await supabase
-      .from("registrations")
-      .select("id")
-      .eq("order_id", originalOrder.id)
-      .eq("registration_status", "pending_payment");
-
-    const remainingCount = stillPending?.length || 0;
-    const newBatchOrderNsu = generateCode("NSU");
-
-    if (remainingCount === 0) {
-      // No one left — cancel the original batch order
-      await supabase
-        .from("orders")
-        .update({
-          payment_status: "canceled",
-          canceled_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", originalOrder.id);
-    } else {
-      // Update count, total, regenerate NSU and clear old link
-      await supabase
-        .from("orders")
-        .update({
-          participants_count: remainingCount,
-          total_price_cents: remainingCount * event.unit_price_cents,
-          order_nsu: newBatchOrderNsu,
-          payment_link: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", originalOrder.id);
-    }
+    // Recalculate the original batch order using consolidated helper
+    const remaining = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents);
 
     // Generate payment link for the new individual order
     const link = await generatePaymentLink(
@@ -319,7 +354,8 @@ Deno.serve(async (req) => {
         original_order_id: originalOrder.id,
         new_order_id: newOrder.id,
         new_order_code: newOrderCode,
-        remaining_in_batch: remainingCount,
+        remaining_in_batch: remaining.count,
+        original_batch_canceled: remaining.count === 0,
       },
     });
 
@@ -328,7 +364,7 @@ Deno.serve(async (req) => {
       order_code: newOrderCode,
       total_price_cents: unitPrice,
       participants_count: 1,
-      original_order_canceled: remainingCount === 0,
+      original_order_canceled: remaining.count === 0,
     });
   } catch (err) {
     console.error("[split] Unexpected error:", err);

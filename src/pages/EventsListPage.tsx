@@ -75,6 +75,8 @@ export default function EventsListPage() {
   // Batch split payment state
   const [splitDialogReg, setSplitDialogReg] = useState<RegistrationWithEvent | null>(null);
   const [splitOrder, setSplitOrder] = useState<{ purchase_type: string; total_price_cents: number; participants_count: number; payment_link: string | null; unit_price_cents: number } | null>(null);
+  const [splitPreview, setSplitPreview] = useState<{ remaining_count: number; remaining_total_cents: number; remaining_participants: { id: string; name: string; cpf_masked: string }[] } | null>(null);
+  const [splitPreviewLoading, setSplitPreviewLoading] = useState(false);
   const [splitLoading, setSplitLoading] = useState<"individual" | "batch_remaining" | null>(null);
 
   // Open lookup dialog automatically when redirected with ?lookup=1
@@ -440,7 +442,7 @@ export default function EventsListPage() {
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
                                           return;
                                         }
-                                        // Batch order → open split sub-dialog
+                                        // Batch order → open split sub-dialog and fetch preview
                                         if (order.purchase_type === "batch") {
                                           setSplitOrder({
                                             purchase_type: order.purchase_type,
@@ -450,6 +452,34 @@ export default function EventsListPage() {
                                             unit_price_cents: order.unit_price_cents,
                                           });
                                           setSplitDialogReg(r);
+                                          setSplitPreview(null);
+                                          setSplitPreviewLoading(true);
+                                          try {
+                                            const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                                            const prevRes = await fetch(
+                                              `https://${projectId}.supabase.co/functions/v1/split-batch-payment`,
+                                              {
+                                                method: "POST",
+                                                headers: {
+                                                  "Content-Type": "application/json",
+                                                  apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                                },
+                                                body: JSON.stringify({ registration_id: r.id, mode: "preview" }),
+                                              }
+                                            );
+                                            const prev = await prevRes.json();
+                                            if (prevRes.ok) {
+                                              setSplitPreview({
+                                                remaining_count: prev.remaining_count,
+                                                remaining_total_cents: prev.remaining_total_cents,
+                                                remaining_participants: prev.remaining_participants || [],
+                                              });
+                                            }
+                                          } catch (err) {
+                                            console.error("Falha ao carregar preview do lote:", err);
+                                          } finally {
+                                            setSplitPreviewLoading(false);
+                                          }
                                           return;
                                         }
                                         // Individual order → direct redirect
@@ -658,7 +688,7 @@ export default function EventsListPage() {
       </footer>
 
       {/* Split batch payment sub-dialog */}
-      <Dialog open={splitDialogReg !== null} onOpenChange={(o) => { if (!o) { setSplitDialogReg(null); setSplitOrder(null); setSplitLoading(null); } }}>
+      <Dialog open={splitDialogReg !== null} onOpenChange={(o) => { if (!o) { setSplitDialogReg(null); setSplitOrder(null); setSplitLoading(null); setSplitPreview(null); setSplitPreviewLoading(false); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Como deseja pagar?</DialogTitle>
@@ -666,11 +696,29 @@ export default function EventsListPage() {
           <p className="text-sm text-muted-foreground">
             Esta inscrição faz parte de um lote pendente. Escolha como deseja prosseguir:
           </p>
+
+          {splitPreviewLoading && (
+            <p className="text-xs text-muted-foreground italic">Calculando valor atualizado do lote...</p>
+          )}
+
+          {splitPreview && splitPreview.remaining_count > 0 && (
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+              <p className="text-xs font-semibold text-foreground mb-1">
+                Pendentes neste lote ({splitPreview.remaining_count}):
+              </p>
+              <ul className="text-xs text-muted-foreground space-y-0.5 max-h-32 overflow-y-auto">
+                {splitPreview.remaining_participants.map((p) => (
+                  <li key={p.id}>• {p.name} <span className="opacity-60">({p.cpf_masked})</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {splitOrder && (
             <div className="mt-2 space-y-3">
               <button
                 type="button"
-                disabled={splitLoading !== null}
+                disabled={splitLoading !== null || splitPreviewLoading}
                 onClick={() => handleSplitPayment("individual")}
                 className="w-full rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md disabled:opacity-60"
               >
@@ -684,18 +732,20 @@ export default function EventsListPage() {
               </button>
               <button
                 type="button"
-                disabled={splitLoading !== null}
+                disabled={splitLoading !== null || splitPreviewLoading || (splitPreview?.remaining_count ?? 0) === 0}
                 onClick={() => handleSplitPayment("batch_remaining")}
                 className="w-full rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md disabled:opacity-60"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-foreground">Pagar o lote completo</span>
-                  <span className="font-serif text-lg font-bold text-foreground">{formatCentsToBRL(splitOrder.total_price_cents)}</span>
+                  <span className="font-serif text-lg font-bold text-foreground">
+                    {formatCentsToBRL(splitPreview?.remaining_total_cents ?? splitOrder.total_price_cents)}
+                  </span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {splitLoading === "batch_remaining"
                     ? "Atualizando link do lote..."
-                    : `Paga as ${splitOrder.participants_count} inscrição(ões) que ainda estão pendentes neste lote.`}
+                    : `Paga as ${splitPreview?.remaining_count ?? splitOrder.participants_count} inscrição(ões) que ainda estão pendentes neste lote (valor recalculado).`}
                 </p>
               </button>
             </div>
