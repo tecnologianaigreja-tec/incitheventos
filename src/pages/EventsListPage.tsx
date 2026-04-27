@@ -378,15 +378,26 @@ export default function EventsListPage() {
                                     className="gap-1 text-xs gradient-gold text-white shadow-gold hover:opacity-90"
                                     onClick={async (e) => {
                                       e.stopPropagation();
-                                      const { data: order } = await supabase
-                                        .from("orders")
-                                        .select("payment_link, order_code")
-                                        .eq("id", r.order_id)
-                                        .single();
-                                      if (order?.payment_link) {
-                                        window.location.href = order.payment_link;
-                                      } else {
-                                        navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                      try {
+                                        const { data: order, error } = await supabase
+                                          .from("orders")
+                                          .select("payment_link, order_code")
+                                          .eq("id", r.order_id)
+                                          .maybeSingle();
+                                        if (error) {
+                                          console.error("Erro ao buscar pedido:", error);
+                                          toast.error("Não foi possível abrir o pagamento. Refazendo a inscrição...");
+                                          navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                          return;
+                                        }
+                                        if (order?.payment_link) {
+                                          window.location.href = order.payment_link;
+                                        } else {
+                                          navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                        }
+                                      } catch (err) {
+                                        console.error("Falha ao abrir pagamento:", err);
+                                        toast.error("Falha de conexão. Tente novamente.");
                                       }
                                     }}
                                   >
