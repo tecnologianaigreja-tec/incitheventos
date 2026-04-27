@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData } from "@/lib/types";
 import { formatCentsToBRL, formatCPF, isValidCPF } from "@/lib/constants";
