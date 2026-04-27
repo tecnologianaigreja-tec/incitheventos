@@ -116,34 +116,58 @@ Deno.serve(async (req) => {
       .in("cpf", participantCpfs)
       .in("registration_status", ["pending_payment", "confirmed"]);
 
+    const maskCpf = (c: string) => {
+      const d = (c || "").replace(/\D/g, "");
+      if (d.length !== 11) return "***";
+      return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
+    };
+
     if (existingRegs && existingRegs.length > 0) {
-      // Check if any are already confirmed — block those
+      // Block any CPF already CONFIRMED
       const confirmed = existingRegs.filter((r: any) => r.registration_status === "confirmed");
       if (confirmed.length > 0) {
-        const names = confirmed.map((r: any) => r.full_name).join(", ");
-        return new Response(JSON.stringify({ error: `Já existe inscrição confirmada neste evento para: ${names}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(
+          JSON.stringify({
+            error: "Já existe inscrição confirmada neste evento para o(s) CPF(s) abaixo. Use 'Consultar minha inscrição' para gerar sua credencial.",
+            code: "duplicate_confirmed",
+            duplicates: confirmed.map((r: any) => ({
+              name: r.full_name,
+              cpf_masked: maskCpf(r.cpf),
+              status: "confirmed",
+            })),
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
-      // All existing are pending_payment — handle based on purchase type
-      // For individual registration, resume the single pending order
-      if (purchase_type === "individual" && existingRegs.length === 1) {
-        const pendingReg = existingRegs[0];
+      const pendingRegs = existingRegs.filter((r: any) => r.registration_status === "pending_payment");
+
+      // RESUME path: only when the user is trying to register the SAME single CPF
+      // they already have pending as an INDIVIDUAL order. Strict — no auto-cancel.
+      if (
+        purchase_type === "individual" &&
+        participants.length === 1 &&
+        pendingRegs.length === 1
+      ) {
+        const pendingReg: any = pendingRegs[0];
         const { data: existingOrder } = await supabase
           .from("orders")
-          .select("order_code, payment_link, payment_status, total_price_cents, participants_count")
+          .select("order_code, payment_link, payment_status, total_price_cents, participants_count, purchase_type")
           .eq("id", pendingReg.order_id)
           .single();
 
-        if (existingOrder && existingOrder.payment_status === "pending") {
+        if (
+          existingOrder &&
+          existingOrder.payment_status === "pending" &&
+          existingOrder.purchase_type === "individual"
+        ) {
           let paymentLink = existingOrder.payment_link;
-
           if (!paymentLink) {
-            paymentLink = await generatePaymentLink(supabase, supabaseUrl, event, existingOrder, participants);
+            paymentLink = await generatePaymentLink(supabase, supabaseUrl, event, { ...existingOrder, order_nsu: null }, participants);
             if (paymentLink) {
               await supabase.from("orders").update({ payment_link: paymentLink }).eq("id", pendingReg.order_id);
             }
           }
-
           return new Response(
             JSON.stringify({
               order_code: existingOrder.order_code,
@@ -157,48 +181,21 @@ Deno.serve(async (req) => {
         }
       }
 
-      // For batch (or individual with multiple pending), auto-cancel old pending records
-      const pendingRegs = existingRegs.filter((r: any) => r.registration_status === "pending_payment");
+      // All other cases (batch with any pending, individual over batch-pending,
+      // multiple pending) → BLOCK. Never auto-cancel.
       if (pendingRegs.length > 0) {
-        const pendingRegIds = pendingRegs.map((r: any) => r.id);
-        const affectedOrderIds = [...new Set(pendingRegs.map((r: any) => r.order_id))];
-
-        // Cancel the pending registrations
-        await supabase
-          .from("registrations")
-          .update({ registration_status: "canceled", payment_status: "canceled" })
-          .in("id", pendingRegIds);
-
-        // For each affected order, check if all its registrations are now canceled
-        for (const orderId of affectedOrderIds) {
-          const { data: orderRegs } = await supabase
-            .from("registrations")
-            .select("registration_status")
-            .eq("order_id", orderId);
-
-          const allCanceled = orderRegs?.every((r: any) => r.registration_status === "canceled");
-          if (allCanceled) {
-            await supabase
-              .from("orders")
-              .update({ payment_status: "canceled", canceled_at: new Date().toISOString() })
-              .eq("id", orderId)
-              .eq("payment_status", "pending");
-          }
-        }
-
-        // Audit log
-        await supabase.from("audit_logs").insert({
-          action: "pending_registrations_auto_canceled",
-          entity_type: "registration",
-          details: {
-            canceled_registration_ids: pendingRegIds,
-            affected_order_ids: affectedOrderIds,
-            reason: "new_registration_attempt",
-            purchase_type,
-          },
-        });
-
-        console.log(`Auto-canceled ${pendingRegIds.length} pending registrations for new ${purchase_type} attempt`);
+        return new Response(
+          JSON.stringify({
+            error: "Já existe inscrição pendente neste evento para o(s) CPF(s) abaixo. Use 'Consultar minha inscrição' para concluir o pagamento.",
+            code: "duplicate_pending",
+            duplicates: pendingRegs.map((r: any) => ({
+              name: r.full_name,
+              cpf_masked: maskCpf(r.cpf),
+              status: "pending_payment",
+            })),
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
 
