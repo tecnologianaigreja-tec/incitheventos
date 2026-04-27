@@ -442,7 +442,7 @@ export default function EventsListPage() {
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
                                           return;
                                         }
-                                        // Batch order → open split sub-dialog
+                                        // Batch order → open split sub-dialog and fetch preview
                                         if (order.purchase_type === "batch") {
                                           setSplitOrder({
                                             purchase_type: order.purchase_type,
@@ -452,6 +452,34 @@ export default function EventsListPage() {
                                             unit_price_cents: order.unit_price_cents,
                                           });
                                           setSplitDialogReg(r);
+                                          setSplitPreview(null);
+                                          setSplitPreviewLoading(true);
+                                          try {
+                                            const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                                            const prevRes = await fetch(
+                                              `https://${projectId}.supabase.co/functions/v1/split-batch-payment`,
+                                              {
+                                                method: "POST",
+                                                headers: {
+                                                  "Content-Type": "application/json",
+                                                  apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                                },
+                                                body: JSON.stringify({ registration_id: r.id, mode: "preview" }),
+                                              }
+                                            );
+                                            const prev = await prevRes.json();
+                                            if (prevRes.ok) {
+                                              setSplitPreview({
+                                                remaining_count: prev.remaining_count,
+                                                remaining_total_cents: prev.remaining_total_cents,
+                                                remaining_participants: prev.remaining_participants || [],
+                                              });
+                                            }
+                                          } catch (err) {
+                                            console.error("Falha ao carregar preview do lote:", err);
+                                          } finally {
+                                            setSplitPreviewLoading(false);
+                                          }
                                           return;
                                         }
                                         // Individual order → direct redirect
