@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { EventData, EventFormField, ParticipantForm } from "@/lib/types";
@@ -278,6 +278,12 @@ export default function RegistrationPage() {
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [duplicateModal, setDuplicateModal] = useState<{
+    title: string;
+    message: string;
+    duplicates: { name: string; cpf_masked: string; status: string }[];
+  } | null>(null);
   const [tab, setTab] = useState<"individual" | "batch">("individual");
   const [registrationCount, setRegistrationCount] = useState(0);
 
