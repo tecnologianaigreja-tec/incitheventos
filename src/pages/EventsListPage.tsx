@@ -195,7 +195,7 @@ export default function EventsListPage() {
       setSplitLoading(null);
     }
   }
-
+  async function handleDownloadCredential(reg: RegistrationWithEvent) {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "mm", format: [105, 148] });
 
