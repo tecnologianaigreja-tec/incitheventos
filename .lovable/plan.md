@@ -1,54 +1,95 @@
-## Correção: Consulta de inscrição com botão "Buscar" travado
+## Pagamento parcial de lote + bloqueio de duplicatas (com proteção total a inscrições pagas)
 
-### Problema identificado
+### GARANTIA CRÍTICA — inscrições confirmadas/pagas NUNCA serão apagadas
 
-Em `src/pages/EventsListPage.tsx`, função `handleCpfLookup` (linhas 94–109):
+Antes de qualquer coisa: a Parte 1 (limpeza) **jamais** deleta nem cancela qualquer registration com `payment_status='approved'` OU `registration_status='confirmed'`. As regras abaixo são desenhadas para que, mesmo no caso raro de "2 confirmadas para o mesmo CPF" (José Gilmar), as duas sejam **mantidas** e apenas marcadas para revisão manual do admin — não é tarefa do script decidir qual confirmada apagar quando dinheiro real foi cobrado.
 
-```ts
-async function handleCpfLookup() {
-  const digits = cpfInput.replace(/\D/g, "");
-  if (!isValidCPF(digits)) return;   // ← retorna SILENCIOSAMENTE
-  setLookupLoading(true);
-  ...
-  const { data } = await supabase.from("registrations")...  // ← ignora erro
-  setRegistrations((data || []) as ...);
-  setLookupLoading(false);
-}
-```
+---
 
-Três falhas que fazem o botão parecer "travado":
+### PARTE 1 — Limpeza de duplicatas (super conservadora)
 
-1. **CPF inválido sem feedback**: se o usuário digitar um CPF com dígito verificador errado (mesmo que com 11 dígitos), a função sai sem mostrar nada — o botão "não responde" do ponto de vista do usuário.
-2. **Erro da query ignorado**: a desestruturação só pega `data`, não `error`. Se o PostgREST retornar erro (ex.: timeout, RLS, falha de embed `events(...)`), o usuário vê tela em branco sem aviso.
-3. **Sem `try/catch/finally`**: se a Promise do Supabase rejeitar (rede caiu, CORS), `setLookupLoading(false)` nunca é chamado e o botão fica eternamente em "Buscando…".
+Para cada par `(cpf, event_id)` com mais de uma registration:
 
-Diagnóstico confirmado:
-- Backend ok: query embutida `events(title, ...)` funciona via REST direto, FKs `registrations_event_id_fkey` existem, RLS permite SELECT público em `registrations`.
-- 96 inscrições `confirmed` e 39 `pending_payment` no banco — dados disponíveis.
-- O sintoma "botão travado" nos dois dispositivos é compatível com erro de rede/JS não tratado deixando o `loading=true`.
+**Regra A — existe pelo menos 1 confirmada/paga:**
+- **Mantém intactas TODAS as confirmadas/pagas** (não toca em nenhuma).
+- Cancela apenas as registrations com status `pending_payment` desse CPF (porque já existe uma paga, a pendente é redundante).
+- Se houver 2+ confirmadas para o mesmo CPF (caso José Gilmar), **NÃO mexe em nenhuma**. Apenas registra no `audit_logs` com `action='duplicate_confirmed_needs_review'` para o admin revisar manualmente. O script não decide.
 
-### Solução
+**Regra B — só pendentes (nenhuma confirmada):**
+- Mantém a pendente **mais antiga** (preserva o `order_id` original e o link de pagamento já gerado).
+- Cancela as demais pendentes (mais recentes).
 
-Reescrever `handleCpfLookup` em `src/pages/EventsListPage.tsx` com tratamento robusto:
+**Salvaguardas técnicas obrigatórias na migration:**
+- A query de UPDATE terá cláusula explícita `WHERE registration_status = 'pending_payment' AND payment_status != 'approved'` — duplo filtro, defesa em profundidade.
+- Antes do UPDATE, um `SELECT` de verificação contando quantas confirmadas seriam afetadas. Se o número for > 0, a migration **aborta com erro** (transaction rollback) sem aplicar nada.
+- Toda a operação dentro de uma única transação BEGIN/COMMIT.
+- Audit log de cada cancelamento com motivo `duplicate_cleanup_pending_only` e o ID da registration mantida.
+- Para orders cujas registrations ficaram 100% canceladas, marcar order como `canceled` — mas **só** se nenhuma registration daquele order estiver confirmada (verificação extra).
 
-1. **Validar e dar feedback**:
-   - Se CPF vazio → toast "Digite seu CPF".
-   - Se CPF com menos de 11 dígitos → toast "CPF incompleto".
-   - Se algoritmo `isValidCPF` falhar → toast "CPF inválido".
+**Resumo dos 8 casos do banco (após auditoria):**
+| CPF | Antes | Depois |
+|---|---|---|
+| SARA COSTA (5 pend) | 5 pendentes | 1 mantida, 4 canceladas |
+| Matheus Gomes (1 conf + 2 pend) | 1 confirmada + 2 pendentes | **1 confirmada intacta** + 2 canceladas |
+| Claudiane (1 conf + 1 pend) | 1 confirmada + 1 pendente | **1 confirmada intacta** + 1 cancelada |
+| José Gilmar (2 conf) | 2 confirmadas | **2 confirmadas intactas** + log para revisão manual |
+| 5 lotes (2 pend cada) | 2 pendentes | 1 mantida, 1 cancelada |
 
-2. **Garantir reset do loading**: envolver em `try / catch / finally` para que `setLookupLoading(false)` execute mesmo em caso de exceção.
+Zero registration paga será cancelada. Zero.
 
-3. **Tratar erro do Supabase**: capturar `error` da resposta e mostrar toast "Erro ao consultar. Tente novamente." com `console.error` para diagnóstico.
+---
 
-4. **Fallback no embed `events`**: se o embed falhar (`r.events` undefined em algum item), filtrar esses itens e logar — evita crash no `r.events.title` ao renderizar os cards.
+### PARTE 2 — Bloqueio definitivo de novas duplicatas
 
-5. **Mesmo tratamento no botão "Pagar"** (linhas ~342–354): a chamada `supabase.from("orders").select(...).single()` também ignora erro e pode travar a navegação. Adicionar `try/catch` e fallback para a página de inscrição.
+**Migration:**
+- Índice único parcial: `UNIQUE (cpf, event_id) WHERE registration_status IN ('pending_payment', 'confirmed')`. Barreira atômica no banco.
+- Coluna `parent_order_id uuid` em `orders` (nullable) com índice — usado pelo split (Parte 3).
+
+**Edge Function `create-checkout`:**
+- Confirmada existente para qualquer CPF do request → erro `409` listando os nomes, instruindo consultar pelo CPF.
+- Pendente existente:
+  - Individual com 1 pendente do mesmo CPF do mesmo tipo individual → resume comportamento atual (retorna link existente).
+  - Qualquer outro caso (lote com pendente, individual sobre pendente de lote, etc.) → erro `409` instruindo consulta por CPF para pagar a pendente. Hoje auto-cancela; passa a bloquear.
+- Resposta 409 estruturada: `{ duplicates: [{ name, cpf_masked, status }] }`.
+- Captura erro `23505` (violação de índice único) como fallback retornando 409.
+
+**Frontend `RegistrationPage.tsx`:**
+- Trata 409 com modal claro listando os nomes e botão "Consultar minha inscrição" levando para `/` com diálogo de consulta aberto.
+- `useRef` de flag de submissão + `disabled` no botão durante request — defesa em camadas contra cliques duplos (causa raiz dos 5 cadastros simultâneos da SARA).
+
+---
+
+### PARTE 3 — Split de pagamento de lote
+
+**Edge Function nova `split-batch-payment`:**
+- Input: `registration_id`, `mode: "individual" | "batch_remaining"`.
+- Modo `individual`: cria novo order (purchase_type=individual, parent_order_id=lote), move a registration, recalcula lote remanescente (count + total), regenera `order_nsu` e `payment_link` do lote, gera link novo do individual. Idempotente.
+- Modo `batch_remaining`: regenera/retorna o link do lote já recalculado.
+- Validações: registration `pending_payment`, order original `batch` e `pending`, evento publicado.
+- Audit log de cada split.
+
+**Webhook `payment-webhook`:** sem mudança de lógica (já confirma só registrations do `order_id` recebido). Log adicional quando `parent_order_id` está presente.
+
+**Frontend `EventsListPage.tsx`:**
+- Botão "Pagar" em pendente de **lote** → sub-diálogo com 2 opções:
+  - "Pagar só a minha inscrição" (valor unitário) → `split-batch-payment` modo `individual`.
+  - "Pagar o lote completo" (valor recalculado) → modo `batch_remaining`.
+- Pendente individual → comportamento atual.
+
+---
 
 ### O que NÃO muda
-- Backend, RLS, Edge Functions, schema do banco — intactos.
-- Layout/UX da modal — preservado.
-- Lógica de credencial PDF — preservada.
 
-### Escopo
-- 1 arquivo editado: `src/pages/EventsListPage.tsx` (apenas as funções `handleCpfLookup` e o handler do botão "Pagar").
-- Sem alteração de banco, sem mudança em outras páginas.
+- Inscrições confirmadas/pagas: **intocadas** em qualquer cenário.
+- RLS, auth, schema das outras tabelas, admin, certificados, check-in, PDF.
+- Preços, capacidade, validação de CPF.
+- Webhook como única fonte da verdade de pagamento.
+- Resume de pendente individual continua funcionando.
+
+### Escopo de arquivos
+
+- **2 migrações**: limpeza conservadora de duplicatas; índice único + `parent_order_id`.
+- **1 Edge Function nova**: `split-batch-payment`.
+- **1 Edge Function ajustada**: `create-checkout` (409 estruturado, sem auto-cancelar).
+- **1 Edge Function com log**: `payment-webhook` (mínimo).
+- **2 frontends**: `EventsListPage.tsx` (sub-diálogo de split), `RegistrationPage.tsx` (tratamento 409 + anti-duplo-submit).
