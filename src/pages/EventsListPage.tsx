@@ -93,19 +93,55 @@ export default function EventsListPage() {
 
   async function handleCpfLookup() {
     const digits = cpfInput.replace(/\D/g, "");
-    if (!isValidCPF(digits)) return;
+
+    if (!digits) {
+      toast.error("Digite seu CPF");
+      return;
+    }
+    if (digits.length < 11) {
+      toast.error("CPF incompleto. Digite os 11 dígitos.");
+      return;
+    }
+    if (!isValidCPF(digits)) {
+      toast.error("CPF inválido. Verifique os dígitos.");
+      return;
+    }
+
     setLookupLoading(true);
     setRegistrations(null);
     setSelectedReg(null);
 
-    const { data } = await supabase
-      .from("registrations")
-      .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
-      .eq("cpf", digits)
-      .in("registration_status", ["confirmed", "pending_payment"]);
+    try {
+      const { data, error } = await supabase
+        .from("registrations")
+        .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+        .eq("cpf", digits)
+        .in("registration_status", ["confirmed", "pending_payment"]);
 
-    setRegistrations((data || []) as unknown as RegistrationWithEvent[]);
-    setLookupLoading(false);
+      if (error) {
+        console.error("Erro ao consultar inscrições:", error);
+        toast.error("Erro ao consultar. Tente novamente em instantes.");
+        setRegistrations([]);
+        return;
+      }
+
+      // Filtra registros sem evento embutido para evitar crash no render
+      const safeRegs = ((data || []) as unknown as RegistrationWithEvent[]).filter((r) => {
+        if (!r.events) {
+          console.warn("Registro sem evento associado:", r.id);
+          return false;
+        }
+        return true;
+      });
+
+      setRegistrations(safeRegs);
+    } catch (err) {
+      console.error("Falha inesperada na consulta:", err);
+      toast.error("Falha de conexão. Verifique sua internet e tente novamente.");
+      setRegistrations([]);
+    } finally {
+      setLookupLoading(false);
+    }
   }
 
   async function handleDownloadCredential(reg: RegistrationWithEvent) {
