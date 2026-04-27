@@ -75,6 +75,8 @@ export default function EventsListPage() {
   // Batch split payment state
   const [splitDialogReg, setSplitDialogReg] = useState<RegistrationWithEvent | null>(null);
   const [splitOrder, setSplitOrder] = useState<{ purchase_type: string; total_price_cents: number; participants_count: number; payment_link: string | null; unit_price_cents: number } | null>(null);
+  const [splitPreview, setSplitPreview] = useState<{ remaining_count: number; remaining_total_cents: number; remaining_participants: { id: string; name: string; cpf_masked: string }[] } | null>(null);
+  const [splitPreviewLoading, setSplitPreviewLoading] = useState(false);
   const [splitLoading, setSplitLoading] = useState<"individual" | "batch_remaining" | null>(null);
 
   // Open lookup dialog automatically when redirected with ?lookup=1
