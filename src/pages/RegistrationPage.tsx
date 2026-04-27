@@ -449,8 +449,17 @@ export default function RegistrationPage() {
       const result = await res.json();
 
       if (!res.ok) {
-        toast.error(result.error || "Erro ao processar inscrição");
+        if (res.status === 409 && (result.code === "duplicate_pending" || result.code === "duplicate_confirmed")) {
+          setDuplicateModal({
+            title: result.code === "duplicate_confirmed" ? "Inscrição já confirmada" : "Inscrição pendente",
+            message: result.error || "CPF já cadastrado neste evento.",
+            duplicates: Array.isArray(result.duplicates) ? result.duplicates : [],
+          });
+        } else {
+          toast.error(result.error || "Erro ao processar inscrição");
+        }
         setSubmitting(false);
+        submittingRef.current = false;
         return;
       }
 
@@ -463,6 +472,7 @@ export default function RegistrationPage() {
     } catch {
       toast.error("Erro de conexão. Tente novamente.");
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 
