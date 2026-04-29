@@ -234,7 +234,9 @@ export default function AdminCertificates() {
           <TabsContent value="certificates" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-xl font-bold text-foreground">Certificados</h2>
-              <Button onClick={issueAll} className="gap-2"><Award className="h-4 w-4" /> Emitir Todos Elegíveis</Button>
+              <Button onClick={issueAll} disabled={issuingAll} className="gap-2">
+                <Award className="h-4 w-4" /> {issuingAll ? "Emitindo..." : "Emitir Todos Elegíveis"}
+              </Button>
             </div>
 
             {loading ? (
@@ -297,6 +299,12 @@ export default function AdminCertificates() {
                 </Table>
               </div>
             )}
+            <AdminPagination
+              page={page}
+              pageSize={CERTS_PAGE_SIZE}
+              total={totalCount}
+              onPageChange={setPage}
+            />
           </TabsContent>
 
           <TabsContent value="template" className="mt-4">
