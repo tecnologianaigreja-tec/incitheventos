@@ -131,6 +131,26 @@ export default function EventsListPage() {
     setSelectedReg(null);
 
     try {
+      // Ask backend to reconcile any pending orders for this CPF before
+      // we render — this ensures already-paid registrations show as
+      // "Confirmada" instead of asking the user to pay again.
+      try {
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({ cpf: digits }),
+          }
+        );
+      } catch (e) {
+        console.warn("Reconciliação prévia falhou (segue normalmente):", e);
+      }
+
       const { data, error } = await supabase
         .from("registrations")
         .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
