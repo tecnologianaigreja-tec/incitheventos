@@ -26,17 +26,38 @@ export default function OrderStatusPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    async function reconcile() {
+      try {
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({ order_code: orderCode }),
+          }
+        );
+      } catch (err) {
+        console.warn("Reconcile call failed (will retry on next poll):", err);
+      }
+    }
+
     async function load() {
       if (!orderCode) return;
-
-      // Update redirect status if coming from payment
-      const redirectStatus = searchParams.get("status");
 
       const { data: orderData } = await supabase
         .from("orders")
         .select("*")
         .eq("order_code", orderCode)
         .single();
+
+      if (cancelled) return;
 
       if (orderData) {
         setOrder(orderData as unknown as OrderData);
@@ -46,14 +67,29 @@ export default function OrderStatusPage() {
           .select("*")
           .eq("order_id", orderData.id);
 
-        if (regs) setRegistrations(regs as unknown as RegistrationData[]);
+        if (!cancelled && regs) setRegistrations(regs as unknown as RegistrationData[]);
       }
       setLoading(false);
     }
-    load();
-    // Poll for updates every 10 seconds
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
+
+    async function bootstrap() {
+      // First, ask the backend to verify with InfinitePay if this order
+      // is already paid (covers cases when webhook was missed or delayed).
+      // Only blocks the very first render.
+      await reconcile();
+      await load();
+      // Keep polling: reconcile + reload every 8s while page is open.
+      interval = setInterval(async () => {
+        await reconcile();
+        await load();
+      }, 8000);
+    }
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
   }, [orderCode, searchParams]);
 
   if (loading) {
