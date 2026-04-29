@@ -230,16 +230,9 @@ export default function AdminRegistrations() {
     load();
   }
 
-  const filtered = applyDynamicFilters(
-    registrations.filter(r => {
-      const matchSearch = !search || r.full_name.toLowerCase().includes(search.toLowerCase()) ||
-        r.email.toLowerCase().includes(search.toLowerCase()) ||
-        r.registration_code.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === "all" || r.registration_status === statusFilter;
-      return matchSearch && matchStatus;
-    }),
-    dynamicFilters
-  );
+  // Server-side already applied search + status + event filter; only dynamic
+  // (custom_fields jsonb) filters are applied here over the current page.
+  const filtered = applyDynamicFilters(registrations, dynamicFilters);
 
   async function handleDownloadReport() {
     const eventData = selectedEventId !== "all"
