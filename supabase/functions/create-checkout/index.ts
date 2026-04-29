@@ -73,14 +73,8 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Need a valid buyer email to call InfinitePay
+      // E-mail é opcional — InfinitePay coleta do cliente no próprio checkout se vazio
       const buyerEmail = (existingOrder.buyer_email || "").trim();
-      if (!buyerEmail || !isValidEmail(buyerEmail)) {
-        return new Response(
-          JSON.stringify({ error: "E-mail do responsável ausente ou inválido neste pedido. Refaça a inscrição informando um e-mail válido." }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
 
       const { data: ev } = await supabase.from("events").select("*").eq("id", existingOrder.event_id).maybeSingle();
       if (!ev) {
@@ -154,14 +148,15 @@ Deno.serve(async (req) => {
     if (!isValidCPF(buyer.cpf)) {
       return new Response(JSON.stringify({ error: "CPF do responsável inválido" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // E-mail do responsável é obrigatório (InfinitePay exige customer.email)
+    // E-mail é opcional — se informado, valida formato; senão, InfinitePay coleta no checkout
     const buyerEmailCandidate = (buyer.email || participants[0]?.email || "").trim();
-    if (!buyerEmailCandidate || !isValidEmail(buyerEmailCandidate)) {
+    if (buyerEmailCandidate && !isValidEmail(buyerEmailCandidate)) {
       return new Response(
-        JSON.stringify({ error: "E-mail do responsável é obrigatório para o pagamento." }),
+        JSON.stringify({ error: "E-mail do responsável inválido." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
 
     // Validate each participant
     for (const p of participants) {
@@ -461,7 +456,7 @@ async function generatePaymentLink(
       })),
       customer: {
         name: order.buyer_name,
-        email: order.buyer_email,
+        ...(order.buyer_email && String(order.buyer_email).trim() ? { email: String(order.buyer_email).trim() } : {}),
         ...(phoneNumber ? { phone_number: phoneNumber } : {}),
       },
       redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
