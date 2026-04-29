@@ -358,17 +358,17 @@ export default function AdminRegistrations() {
             variant="outline"
             size="sm"
             onClick={handlePrintBatch}
-            disabled={printing || filtered.length === 0}
+            disabled={printing || totalCount === 0}
             className="gap-2"
           >
             {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-            Imprimir etiquetas ({filtered.length})
+            Imprimir etiquetas ({totalCount})
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={handleDownloadReport}
-            disabled={generatingReport || filtered.length === 0}
+            disabled={generatingReport || totalCount === 0}
             className="gap-2"
           >
             {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
