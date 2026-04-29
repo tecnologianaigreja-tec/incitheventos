@@ -467,8 +467,8 @@ export default function AdminRegistrations() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar por nome, e-mail ou código" value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
@@ -482,12 +482,28 @@ export default function AdminRegistrations() {
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="all">Status: Todos</SelectItem>
             <SelectItem value="pending_payment">Pendente</SelectItem>
             <SelectItem value="confirmed">Confirmado</SelectItem>
             <SelectItem value="canceled">Cancelado</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={labelFilter} onValueChange={(v) => setLabelFilter(v as any)}>
+          <SelectTrigger className="w-48"><SelectValue placeholder="Etiqueta" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Etiqueta: Todos</SelectItem>
+            <SelectItem value="unprinted">Não impressos</SelectItem>
+            <SelectItem value="printed">Impressos</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={materialFilter} onValueChange={(v) => setMaterialFilter(v as any)}>
+          <SelectTrigger className="w-48"><SelectValue placeholder="Material" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Material: Todos</SelectItem>
+            <SelectItem value="pending">Pendente</SelectItem>
+            <SelectItem value="delivered">Entregue</SelectItem>
           </SelectContent>
         </Select>
       </div>
