@@ -151,7 +151,7 @@ export default function AdminRegistrations() {
   }
 
   useEffect(() => { loadEvents(); loadLabelTemplate(); }, []);
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch, statusFilter]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch, statusFilter, labelFilter, materialFilter]);
 
   async function uncheckinRegistration(reg: RegistrationData) {
     const { data: { user } } = await supabase.auth.getUser();
