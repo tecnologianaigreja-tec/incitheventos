@@ -74,7 +74,10 @@ function findInCustomFields(customFields: Record<string, any>, fieldKey: string)
 
 export function getFieldValue(reg: RegistrationData, fieldKey: string): string {
   const knownField = resolveKnownField(fieldKey);
-  if (knownField) return (reg[knownField] as string) || "";
+  if (knownField) {
+    const directValue = (reg[knownField] as string) || "";
+    if (directValue) return directValue;
+  }
   // Check direct property first, then custom_fields JSONB
   if ((reg as any)[fieldKey]) return (reg as any)[fieldKey];
   const cf = ((reg as any).custom_fields && typeof (reg as any).custom_fields === "object") ? (reg as any).custom_fields : {};
