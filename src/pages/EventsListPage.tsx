@@ -620,12 +620,43 @@ export default function EventsListPage() {
                             <Button
                               className="gap-2 gradient-gold text-white shadow-gold hover:opacity-90"
                               onClick={async () => {
-                                // Fetch order payment link
+                                // First, ask backend to verify with InfinitePay if this
+                                // order was already paid. If so, do not redirect to checkout.
+                                try {
+                                  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                                  const recRes = await fetch(
+                                    `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
+                                    {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                      },
+                                      body: JSON.stringify({ order_id: selectedReg.order_id }),
+                                    }
+                                  );
+                                  const recData = await recRes.json().catch(() => ({}));
+                                  if (recData?.approved > 0) {
+                                    toast.success("Esta inscrição já foi paga e está confirmada.");
+                                    await handleCpfLookup();
+                                    setSelectedReg(null);
+                                    return;
+                                  }
+                                } catch (e) {
+                                  console.warn("Reconciliação falhou:", e);
+                                }
+
                                 const { data: order } = await supabase
                                   .from("orders")
-                                  .select("payment_link, order_code")
+                                  .select("payment_link, payment_status, order_code")
                                   .eq("id", selectedReg.order_id)
                                   .single();
+                                if (order?.payment_status === "approved") {
+                                  toast.success("Pagamento já confirmado.");
+                                  await handleCpfLookup();
+                                  setSelectedReg(null);
+                                  return;
+                                }
                                 if (order?.payment_link) {
                                   window.location.href = order.payment_link;
                                 } else {
