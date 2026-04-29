@@ -112,6 +112,16 @@ export default function AdminOrders() {
           <p className="text-sm text-muted-foreground">
             Pedidos pendentes podem ser verificados manualmente caso o webhook tenha falhado.
           </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={reconcileAll}
+          disabled={reconcilingAll}
+          className="gap-2"
+        >
+          {reconcilingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Verificar todos pendentes
+        </Button>
       </div>
 
       <div className="relative max-w-md">
@@ -122,15 +132,6 @@ export default function AdminOrders() {
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
         />
-        <Button
-          variant="outline"
-          onClick={reconcileAll}
-          disabled={reconcilingAll}
-          className="gap-2"
-        >
-          {reconcilingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Verificar todos pendentes
-        </Button>
       </div>
 
       <div className="rounded-lg border border-border">
