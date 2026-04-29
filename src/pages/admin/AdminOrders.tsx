@@ -238,13 +238,9 @@ export default function AdminOrders() {
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
-  const q = search.trim().toLowerCase();
-  const filteredOrders = q
-    ? orders.filter(o =>
-        (o.buyer_name || "").toLowerCase().includes(q) ||
-        (o.order_code || "").toLowerCase().includes(q) ||
-        (o.buyer_email || "").toLowerCase().includes(q))
-    : orders;
+  // Search is applied server-side via .or() in load()
+  const filteredOrders = orders;
+  const q = debouncedSearch;
 
   const pendingFilteredIds = filteredOrders.filter(o => o.payment_status === "pending").map(o => o.id);
   const allPendingSelected = pendingFilteredIds.length > 0 && pendingFilteredIds.every(id => selectedIds.has(id));
