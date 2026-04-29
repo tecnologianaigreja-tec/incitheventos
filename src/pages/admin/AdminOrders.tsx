@@ -19,6 +19,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcilingAll, setReconcilingAll] = useState(false);
+  const [search, setSearch] = useState("");
 
   async function load() {
     const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
