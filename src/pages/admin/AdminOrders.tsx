@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import AdminPagination from "@/components/admin/AdminPagination";
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente", approved: "Aprovado", refused: "Recusado",
