@@ -5,7 +5,8 @@ import { formatCentsToBRL } from "@/lib/constants";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
@@ -18,6 +19,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcilingAll, setReconcilingAll] = useState(false);
+  const [search, setSearch] = useState("");
 
   async function load() {
     const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
@@ -93,6 +95,15 @@ export default function AdminOrders() {
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
+  const q = search.trim().toLowerCase();
+  const filteredOrders = q
+    ? orders.filter(o =>
+        (o.buyer_name || "").toLowerCase().includes(q) ||
+        (o.order_code || "").toLowerCase().includes(q) ||
+        (o.buyer_email || "").toLowerCase().includes(q)
+      )
+    : orders;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -113,6 +124,16 @@ export default function AdminOrders() {
         </Button>
       </div>
 
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Pesquisar por nome, código ou e-mail..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
       <div className="rounded-lg border border-border">
         <Table>
           <TableHeader>
@@ -128,7 +149,7 @@ export default function AdminOrders() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.map(o => (
+            {filteredOrders.map(o => (
               <TableRow key={o.id}>
                 <TableCell className="font-mono text-xs">{o.order_code}</TableCell>
                 <TableCell>{o.buyer_name}</TableCell>
@@ -159,8 +180,8 @@ export default function AdminOrders() {
                 </TableCell>
               </TableRow>
             ))}
-            {orders.length === 0 && (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Nenhum pedido</TableCell></TableRow>
+            {filteredOrders.length === 0 && (
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">{q ? "Nenhum pedido encontrado" : "Nenhum pedido"}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
