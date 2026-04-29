@@ -483,6 +483,13 @@ export default function AdminRegistrations() {
         </Table>
       </div>
 
+      <AdminPagination
+        page={page}
+        pageSize={REG_PAGE_SIZE}
+        total={totalCount}
+        onPageChange={setPage}
+      />
+
       {/* Registration Detail Dialog */}
       <Dialog open={!!selectedReg} onOpenChange={(open) => { if (!open) setSelectedReg(null); }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
