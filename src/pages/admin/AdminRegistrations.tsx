@@ -177,14 +177,41 @@ export default function AdminRegistrations() {
     load();
   }
 
+  async function markPrintedRpc(ids: string[]) {
+    if (ids.length === 0) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const chunkSize = 200;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error } = await (supabase as any).rpc("mark_labels_printed", {
+        _ids: chunk,
+        _user: user?.id ?? null,
+      });
+      if (error) throw error;
+    }
+    await supabase.from("audit_logs").insert({
+      action: "labels_printed",
+      entity_type: "registration",
+      actor_id: user?.id ?? null,
+      details: { count: ids.length, event_id: selectedEventId } as any,
+    });
+  }
+
   async function handlePrintSingle(reg: RegistrationData) {
     if (!labelTemplate || labelTemplate.elements.length === 0) {
       toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
       return;
     }
+    const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
+    if (usesQr && !reg.qr_token) {
+      toast.error("Inscrito sem QR token (pagamento pendente)");
+      return;
+    }
     setPrinting(true);
     try {
       await printLabels([reg as unknown as Record<string, any>], labelTemplate);
+      try { await markPrintedRpc([reg.id]); } catch (e) { console.error(e); }
+      load();
     } catch (e) {
       console.error(e);
       toast.error("Erro ao gerar etiqueta");
@@ -204,6 +231,10 @@ export default function AdminRegistrations() {
         let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
         if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
         if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+        if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
+        if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
+        if (materialFilter === "pending") q = q.is("material_delivered_at", null);
+        if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
         if (debouncedSearch) {
           const escaped = debouncedSearch.replace(/[%,]/g, "");
           q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
@@ -213,20 +244,66 @@ export default function AdminRegistrations() {
       const allFiltered = applyDynamicFilters(all, dynamicFilters);
       const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
       const eligible = usesQr ? allFiltered.filter(r => !!r.qr_token) : allFiltered;
-      const skipped = allFiltered.length - eligible.length;
+      const semQr = allFiltered.length - eligible.length;
       if (eligible.length === 0) {
         toast.error("Nenhum inscrito elegível (sem QR token disponível)");
+        setPrinting(false);
         return;
       }
-      const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
-        (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
-      if (!window.confirm(msg)) return;
-      await printLabels(eligible as unknown as Record<string, any>[], labelTemplate);
+      const novos = eligible.filter(r => !r.label_printed_at);
+      const jaImpressos = eligible.filter(r => !!r.label_printed_at);
+      setPrintDialog({ novos, jaImpressos, semQr });
     } catch (e) {
       console.error(e);
       toast.error("Erro ao gerar etiquetas");
     }
     setPrinting(false);
+  }
+
+  async function executePrint(toPrint: RegistrationData[]) {
+    if (!labelTemplate || toPrint.length === 0) return;
+    setPrinting(true);
+    try {
+      await printLabels(toPrint as unknown as Record<string, any>[], labelTemplate);
+      try { await markPrintedRpc(toPrint.map(r => r.id)); } catch (e) { console.error(e); }
+      setPrintDialog(null);
+      load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar etiquetas");
+    }
+    setPrinting(false);
+  }
+
+  async function unmarkPrinted(reg: RegistrationData) {
+    const { error } = await (supabase.from("registrations") as any).update({
+      label_printed_at: null,
+      label_printed_by: null,
+    }).eq("id", reg.id);
+    if (error) { toast.error("Erro ao desmarcar etiqueta"); return; }
+    toast.success("Etiqueta marcada como não impressa");
+    setSelectedReg({ ...reg, label_printed_at: null, label_printed_by: null });
+    load();
+  }
+
+  async function toggleMaterial(reg: RegistrationData, deliver: boolean) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const payload = deliver
+      ? { material_delivered_at: new Date().toISOString(), material_delivered_by: user?.id ?? null }
+      : { material_delivered_at: null, material_delivered_by: null };
+    const { error } = await (supabase.from("registrations") as any).update(payload).eq("id", reg.id);
+    if (error) { toast.error("Erro ao atualizar material"); return; }
+    await supabase.from("audit_logs").insert({
+      action: deliver ? "material_delivered" : "material_undelivered",
+      entity_type: "registration",
+      entity_id: reg.id,
+      actor_id: user?.id ?? null,
+      details: { full_name: reg.full_name } as any,
+    });
+    // Optimistic local update
+    setRegistrations(prev => prev.map(r => r.id === reg.id ? ({ ...r, ...payload } as RegistrationData) : r));
+    if (selectedReg?.id === reg.id) setSelectedReg({ ...reg, ...payload } as RegistrationData);
+    toast.success(deliver ? "Material marcado como entregue" : "Material revertido para pendente");
   }
 
 
