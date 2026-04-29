@@ -37,42 +37,56 @@ async function checkInfinitePayStatus(
   handle: string,
   order: { order_nsu: string | null; invoice_slug: string | null; payment_provider_reference: string | null }
 ): Promise<PaymentCheckResult> {
-  try {
-    // Primary path: payment_check endpoint
-    const checkBody: Record<string, unknown> = { handle };
-    if (order.order_nsu) checkBody.order_nsu = order.order_nsu;
-    if (order.invoice_slug) checkBody.slug = order.invoice_slug;
-    if (order.payment_provider_reference)
-      checkBody.transaction_nsu = order.payment_provider_reference;
-
-    const res = await fetch(
-      "https://api.infinitepay.io/invoices/public/checkout/payment_check",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(checkBody),
-      }
-    );
-    const data = await res.json().catch(() => ({} as Record<string, unknown>));
-    console.log("[reconcile] payment_check response:", res.status, JSON.stringify(data));
-
-    const paid =
-      (data && (data as any).paid === true) ||
-      (typeof (data as any).paid_amount === "number" && (data as any).paid_amount > 0);
-
-    if (paid) {
-      return {
-        paid: true,
-        paid_amount: typeof (data as any).paid_amount === "number" ? (data as any).paid_amount : undefined,
-        raw: data,
-      };
-    }
-
-    return { paid: false, raw: data };
-  } catch (err) {
-    console.error("[reconcile] payment_check failed:", err);
-    return { paid: false };
+  // Try multiple identifiers because InfinitePay's payment_check accepts
+  // different shapes depending on the link version. The `lenc` value
+  // (stored as invoice_slug) is the one that works for recent links.
+  const attempts: Array<{ name: string; body: Record<string, unknown> }> = [];
+  if (order.invoice_slug) {
+    attempts.push({ name: "slug", body: { handle, slug: order.invoice_slug } });
+    attempts.push({ name: "lenc", body: { handle, lenc: order.invoice_slug } });
   }
+  if (order.order_nsu) {
+    attempts.push({ name: "order_nsu", body: { handle, order_nsu: order.order_nsu } });
+  }
+  if (order.payment_provider_reference) {
+    attempts.push({
+      name: "transaction_nsu",
+      body: { handle, transaction_nsu: order.payment_provider_reference },
+    });
+  }
+
+  for (const attempt of attempts) {
+    try {
+      const res = await fetch(
+        "https://api.infinitepay.io/invoices/public/checkout/payment_check",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(attempt.body),
+        }
+      );
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      console.log(`[reconcile] payment_check[${attempt.name}] ${res.status}:`, JSON.stringify(data));
+
+      const paid =
+        (data && (data as any).paid === true) ||
+        (typeof (data as any).paid_amount === "number" && (data as any).paid_amount > 0) ||
+        (typeof (data as any).receipt_url === "string" && (data as any).receipt_url.length > 0);
+
+      if (paid) {
+        return {
+          paid: true,
+          paid_amount:
+            typeof (data as any).paid_amount === "number" ? (data as any).paid_amount : undefined,
+          raw: data,
+        };
+      }
+    } catch (err) {
+      console.error(`[reconcile] payment_check[${attempt.name}] failed:`, err);
+    }
+  }
+
+  return { paid: false };
 }
 
 /**

@@ -93,7 +93,11 @@ async function generatePaymentLink(
     const data = await res.json();
     if (res.ok) {
       const link = data.checkout_url || data.url || data.link || null;
-      const slug = data.slug || data.invoice_slug || null;
+      let slug = data.slug || data.invoice_slug || null;
+      if (!slug && typeof link === "string") {
+        const m = link.match(/[?&]lenc=([^&]+)/);
+        if (m) slug = decodeURIComponent(m[1]);
+      }
       if (slug && order.id) {
         try {
           await supabase.from("orders").update({ invoice_slug: slug }).eq("id", order.id);
