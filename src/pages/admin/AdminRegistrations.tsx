@@ -253,21 +253,7 @@ export default function AdminRegistrations() {
     setPrinting(true);
     try {
       // Fetch all matching registrations across pages (server-side filters preserved)
-      const all = await fetchAllPages<RegistrationData>(() => {
-        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
-        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
-        if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
-        if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
-        if (materialFilter === "pending") q = q.is("material_delivered_at", null);
-        if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
-        if (debouncedSearch) {
-          const escaped = debouncedSearch.replace(/[%,]/g, "");
-          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
-        }
-        q = applyDynamicFiltersToQuery(q, dynamicFilters);
-        return q;
-      });
+      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
       // Defensive client-side pass (no-op when server already filtered).
       const allFiltered = applyDynamicFilters(all, dynamicFilters);
       const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
@@ -382,21 +368,7 @@ export default function AdminRegistrations() {
 
     try {
       // Fetch all matching registrations across pages
-      const all = await fetchAllPages<RegistrationData>(() => {
-        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
-        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
-        if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
-        if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
-        if (materialFilter === "pending") q = q.is("material_delivered_at", null);
-        if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
-        if (debouncedSearch) {
-          const escaped = debouncedSearch.replace(/[%,]/g, "");
-          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
-        }
-        q = applyDynamicFiltersToQuery(q, dynamicFilters);
-        return q;
-      });
+      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
       const allFiltered = applyDynamicFilters(all, dynamicFilters);
 
       if (allFiltered.length === 0) {
