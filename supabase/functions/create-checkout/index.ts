@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
         order_id: order.id,
         registration_code: generateCode("INS"),
         full_name: p.full_name.trim(),
-        email: p.email.trim().toLowerCase(),
+        email: (p.email || "").trim().toLowerCase(),
         phone: p.phone || null,
         cpf: p.cpf.replace(/\D/g, ""),
         birth_date: p.birth_date || null,
