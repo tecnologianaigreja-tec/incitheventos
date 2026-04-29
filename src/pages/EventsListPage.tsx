@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download, CreditCard } from "lucide-react";
+import PaymentProofUpload from "@/components/PaymentProofUpload";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -443,6 +444,7 @@ export default function EventsListPage() {
                                     {(r.payment_status === "approved" || r.registration_status === "confirmed") ? "Confirmada" : "Pendente"}
                                   </span>
                                 </p>
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                 {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
                                   <Button
                                     size="sm"
@@ -550,6 +552,15 @@ export default function EventsListPage() {
                                     <CreditCard className="h-3 w-3" /> Pagar
                                   </Button>
                                 )}
+                                {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
+                                  <PaymentProofUpload
+                                    orderId={r.order_id}
+                                    cpf={r.cpf}
+                                    orderCode={r.registration_code}
+                                    onSubmitted={handleCpfLookup}
+                                  />
+                                )}
+                                </div>
                               </div>
                             </CardContent>
                           </Card>
