@@ -26,18 +26,40 @@ export default function AdminCheckin() {
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [searchCheckedIn, setSearchCheckedIn] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchCheckedIn.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchCheckedIn]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   const loadCheckedIn = useCallback(async () => {
-    const { data } = await supabase
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let query = supabase
       .from("registrations")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("checkin_status", "checked_in")
       .order("checkin_at", { ascending: false });
+
+    if (debouncedSearch) {
+      const escaped = debouncedSearch.replace(/[%,]/g, "");
+      query = query.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
+    }
+
+    const { data, count } = await query.range(from, to);
     const regs = (data || []) as unknown as RegistrationData[];
     setCheckedIn(regs);
+    setTotalCount(count || 0);
 
-    // Load custom fields for filtering
+    // Load custom fields for filtering (based on the visible page)
     if (regs.length > 0) {
       const eventIds = [...new Set(regs.map(r => r.event_id))];
       const { data: fields } = await supabase
@@ -58,7 +80,7 @@ export default function AdminCheckin() {
         setCustomFields(unique);
       }
     }
-  }, []);
+  }, [page, debouncedSearch]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
 
