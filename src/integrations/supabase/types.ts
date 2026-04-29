@@ -543,6 +543,48 @@ export type Database = {
           },
         ]
       }
+      payment_proofs: {
+        Row: {
+          buyer_cpf: string
+          created_at: string
+          id: string
+          image_url: string
+          message: string | null
+          order_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewer_note: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          buyer_cpf: string
+          created_at?: string
+          id?: string
+          image_url: string
+          message?: string | null
+          order_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_note?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          buyer_cpf?: string
+          created_at?: string
+          id?: string
+          image_url?: string
+          message?: string | null
+          order_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewer_note?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       registrations: {
         Row: {
           area: string | null
