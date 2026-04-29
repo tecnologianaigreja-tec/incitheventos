@@ -72,10 +72,10 @@ Deno.serve(async (req) => {
 
     // Validate each participant
     for (const p of participants) {
-      if (!p.full_name?.trim() || !p.email?.trim() || !p.cpf?.trim()) {
+      if (!p.full_name?.trim() || !p.cpf?.trim()) {
         return new Response(JSON.stringify({ error: `Dados incompletos para participante ${p.full_name || "sem nome"}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      if (!isValidEmail(p.email)) {
+      if (p.email?.trim() && !isValidEmail(p.email)) {
         return new Response(JSON.stringify({ error: `E-mail inválido: ${p.email}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       if (!isValidCPF(p.cpf)) {
