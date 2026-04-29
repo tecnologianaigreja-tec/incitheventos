@@ -89,13 +89,13 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
           {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
         </div>
         <div>
-          <Label htmlFor={`${prefix}email`}>E-mail *</Label>
+          <Label htmlFor={`${prefix}email`}>E-mail</Label>
           <Input
             id={`${prefix}email`}
             type="email"
             value={value.email}
             onChange={(e) => update("email", e.target.value)}
-            placeholder="seu@email.com"
+            placeholder="seu@email.com (opcional)"
             className={errors.email ? "border-destructive" : ""}
           />
           {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}

@@ -4,8 +4,7 @@ import type { ParticipantForm } from "@/lib/types";
 export function validateParticipant(p: ParticipantForm): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!p.full_name.trim()) errors.full_name = "Nome obrigatório";
-  if (!p.email.trim()) errors.email = "E-mail obrigatório";
-  else if (!isValidEmail(p.email)) errors.email = "E-mail inválido";
+  if (p.email.trim() && !isValidEmail(p.email)) errors.email = "E-mail inválido";
   if (!p.cpf.trim()) errors.cpf = "CPF obrigatório";
   else if (!isValidCPF(p.cpf)) errors.cpf = "CPF inválido";
   if (!p.phone.trim()) errors.phone = "Telefone obrigatório";
