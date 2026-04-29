@@ -149,7 +149,7 @@ export default function AdminOrders() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.map(o => (
+            {filteredOrders.map(o => (
               <TableRow key={o.id}>
                 <TableCell className="font-mono text-xs">{o.order_code}</TableCell>
                 <TableCell>{o.buyer_name}</TableCell>
@@ -180,8 +180,8 @@ export default function AdminOrders() {
                 </TableCell>
               </TableRow>
             ))}
-            {orders.length === 0 && (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Nenhum pedido</TableCell></TableRow>
+            {filteredOrders.length === 0 && (
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">{q ? "Nenhum pedido encontrado" : "Nenhum pedido"}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
