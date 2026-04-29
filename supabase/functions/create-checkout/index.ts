@@ -388,9 +388,13 @@ async function generatePaymentLink(
 
     if (ipRes.ok) {
       const link = ipData.checkout_url || ipData.url || ipData.link || null;
-      const slug = ipData.slug || ipData.invoice_slug || null;
-      // Persist the invoice slug so we can later check payment status
-      // even if the webhook is delayed or missed.
+      // InfinitePay only returns the checkout URL; the real identifier we
+      // can use later for status checks is the `lenc` query string param.
+      let slug = ipData.slug || ipData.invoice_slug || null;
+      if (!slug && typeof link === "string") {
+        const m = link.match(/[?&]lenc=([^&]+)/);
+        if (m) slug = decodeURIComponent(m[1]);
+      }
       if (slug) {
         try {
           await supabase.from("orders").update({ invoice_slug: slug }).eq("id", order.id);
