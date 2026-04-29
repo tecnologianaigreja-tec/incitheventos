@@ -122,7 +122,7 @@ function DynamicField({ field, value, onChange, error }: {
   }
 }
 
-// ─── Buyer-only form (when NOT participant): nome, cpf, whatsapp ───
+// ─── Buyer-only form (when NOT participant): nome, cpf, e-mail, whatsapp ───
 function BuyerOnlySection({ formData, onChange, errors }: {
   formData: Record<string, string>;
   onChange: (data: Record<string, string>) => void;
@@ -165,6 +165,18 @@ function BuyerOnlySection({ formData, onChange, errors }: {
             className={errors.phone ? "border-destructive" : ""}
           />
           {errors.phone && <p className="mt-1 text-xs text-destructive">{errors.phone}</p>}
+        </div>
+        <div className="sm:col-span-2">
+          <Label>E-mail *</Label>
+          <Input
+            type="email"
+            value={formData.email || ""}
+            onChange={e => update("email", e.target.value)}
+            placeholder="seu@email.com"
+            className={errors.email ? "border-destructive" : ""}
+          />
+          {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+          <p className="mt-1 text-xs text-muted-foreground">Necessário para emitir o link de pagamento.</p>
         </div>
       </div>
     </div>
