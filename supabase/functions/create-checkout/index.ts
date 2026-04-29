@@ -44,6 +44,91 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json();
+
+    // ─── Regenerate-link path: re-create the InfinitePay checkout link
+    // for an existing pending order whose payment_link is missing or stale.
+    // Used by the "Pagar" button in CPF lookup so the user is never bounced
+    // back to the registration form when the original link failed to be created.
+    if (body && typeof body === "object" && body.regenerate_for_order_id) {
+      const orderId = String(body.regenerate_for_order_id);
+      const { data: existingOrder, error: regenErr } = await supabase
+        .from("orders")
+        .select("id, order_code, order_nsu, payment_link, payment_status, total_price_cents, participants_count, unit_price_cents, buyer_name, buyer_email, buyer_phone, buyer_document, event_id, purchase_type")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (regenErr || !existingOrder) {
+        return new Response(JSON.stringify({ error: "Pedido não encontrado" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if (existingOrder.payment_status !== "pending") {
+        return new Response(
+          JSON.stringify({ error: "Este pedido não está mais pendente.", order_code: existingOrder.order_code, payment_status: existingOrder.payment_status }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (existingOrder.payment_link) {
+        return new Response(
+          JSON.stringify({ order_code: existingOrder.order_code, payment_link: existingOrder.payment_link, total_price_cents: existingOrder.total_price_cents, participants_count: existingOrder.participants_count }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Need a valid buyer email to call InfinitePay
+      const buyerEmail = (existingOrder.buyer_email || "").trim();
+      if (!buyerEmail || !isValidEmail(buyerEmail)) {
+        return new Response(
+          JSON.stringify({ error: "E-mail do responsável ausente ou inválido neste pedido. Refaça a inscrição informando um e-mail válido." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: ev } = await supabase.from("events").select("*").eq("id", existingOrder.event_id).maybeSingle();
+      if (!ev) {
+        return new Response(JSON.stringify({ error: "Evento do pedido não encontrado" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: regs } = await supabase
+        .from("registrations")
+        .select("full_name, email, cpf, phone")
+        .eq("order_id", existingOrder.id);
+
+      // Ensure the order has an order_nsu (older orders may not)
+      let nsu = existingOrder.order_nsu;
+      if (!nsu) {
+        nsu = generateCode("NSU");
+        await supabase.from("orders").update({ order_nsu: nsu }).eq("id", existingOrder.id);
+      }
+
+      const link = await generatePaymentLink(
+        supabase,
+        supabaseUrl,
+        ev,
+        { ...existingOrder, order_nsu: nsu },
+        (regs && regs.length > 0)
+          ? regs
+          : [{ full_name: existingOrder.buyer_name, email: buyerEmail, cpf: existingOrder.buyer_document }]
+      );
+
+      if (!link) {
+        return new Response(
+          JSON.stringify({ error: "Não foi possível gerar o link de pagamento. Tente novamente em instantes." }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      await supabase.from("orders").update({ payment_link: link }).eq("id", existingOrder.id);
+      await supabase.from("audit_logs").insert({
+        action: "checkout_link_regenerated",
+        entity_type: "order",
+        entity_id: existingOrder.id,
+        details: { order_code: existingOrder.order_code },
+      });
+
+      return new Response(
+        JSON.stringify({ order_code: existingOrder.order_code, payment_link: link, total_price_cents: existingOrder.total_price_cents, participants_count: existingOrder.participants_count }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { event_id, purchase_type, buyer, participants, buyer_is_participant, consent_terms, consent_data_usage } = body;
 
     // Validate required fields
