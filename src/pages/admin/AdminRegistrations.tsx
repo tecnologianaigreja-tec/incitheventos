@@ -42,6 +42,28 @@ export default function AdminRegistrations() {
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [labelTemplate, setLabelTemplate] = useState<LabelTemplate | null>(null);
+  const [editingReg, setEditingReg] = useState<RegistrationData | null>(null);
+  const [uncheckinTarget, setUncheckinTarget] = useState<RegistrationData | null>(null);
+  const [printing, setPrinting] = useState(false);
+
+  async function loadLabelTemplate() {
+    const { data } = await supabase
+      .from("label_template")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      setLabelTemplate({
+        id: (data as any).id,
+        width_mm: Number((data as any).width_mm) || 90.3,
+        height_mm: Number((data as any).height_mm) || 29,
+        elements: ((data as any).elements || []) as LabelElement[],
+        updated_at: (data as any).updated_at,
+      });
+    }
+  }
 
   async function loadEvents() {
     const { data } = await supabase
