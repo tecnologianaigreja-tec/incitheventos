@@ -22,7 +22,7 @@ interface DynamicFieldFiltersProps {
 }
 
 // Known field mappings for filtering
-const KNOWN_FIELD_MAP: Record<string, keyof RegistrationData> = {
+export const KNOWN_FIELD_MAP: Record<string, keyof RegistrationData> = {
   phone: "phone", telefone: "phone",
   birth_date: "birth_date", data_nascimento: "birth_date",
   congregation: "congregation", congregacao: "congregation",
