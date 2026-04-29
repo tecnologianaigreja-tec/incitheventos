@@ -456,7 +456,7 @@ async function generatePaymentLink(
       })),
       customer: {
         name: order.buyer_name,
-        email: order.buyer_email,
+        ...(order.buyer_email && String(order.buyer_email).trim() ? { email: String(order.buyer_email).trim() } : {}),
         ...(phoneNumber ? { phone_number: phoneNumber } : {}),
       },
       redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
