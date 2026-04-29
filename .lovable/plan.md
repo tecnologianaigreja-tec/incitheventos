@@ -1,78 +1,117 @@
-# Limpeza definitiva de duplicatas + correção do badge "Pendente" incorreto
+# Plano: Edição de inscritos + Editor de etiquetas DK-1201
 
-## Diagnóstico
+## Parte 1 — Painel de Inscritos: Descredenciar e Editar
 
-### 1. Banco de dados (verificado)
-A Sara Costa tem **1 inscrição pendente + 4 canceladas** (não 4 pendentes como aparenta na tela). O banco está correto, mas:
-- Existem **11 inscrições canceladas** no banco que são duplicatas redundantes (mesmo CPF + mesmo evento + outra inscrição ativa). Devem ser apagadas para limpar o histórico.
-- Casos identificados:
-  - **Sara Costa (85519758204):** 4 canceladas redundantes → apagar, manter o pending mais antigo.
-  - **CPF 05219260251:** 2 canceladas redundantes → apagar, manter o confirmed.
-  - **CPF 58972897272:** 1 cancelada redundante → apagar, manter o confirmed.
-  - **CPFs 45266409304, 71092277234, 04218980209, 04954054265:** 1 cancelada cada → apagar, manter o pending mais antigo.
-  - **CPF 73658146249:** 2 confirmados (caso especial já flagged em revisão manual) — **NÃO mexer**.
+Em `src/pages/admin/AdminRegistrations.tsx`, dentro do `Dialog` de detalhes:
 
-### 2. Bug visual (verificado em `AdminRegistrations.tsx:286-288`)
-A coluna "Status pagamento" só verifica `payment_status === "approved"`. Como uma inscrição cancelada tem `payment_status = "canceled"` (não "approved"), cai no `else` e mostra "Pendente" — daí a impressão de "4 Saras pendentes" na tela. Precisa exibir "Cancelado" quando o `registration_status` for `canceled`.
+### 1.1 Descredenciar
+- Botão visível apenas quando `checkin_status === "checked_in"`.
+- Confirmação via `AlertDialog`.
+- Ação:
+  - `UPDATE registrations SET checkin_status='not_checked_in', checkin_at=null, checkin_by_user_id=null`
+  - **DELETE** dos registros em `checkin_logs` referentes a essa inscrição (sem manter histórico, conforme solicitado).
+  - Registra em `audit_logs` (`action='registration_uncheckin'`) — apenas auditoria administrativa, não no log de check-in.
 
-### 3. Bloqueio na nova inscrição (já implementado, verificado)
-O fluxo de bloqueio "você já tem cadastro, vá pagar" **já existe** desde a entrega anterior:
-- `create-checkout` retorna **409** quando detecta CPF com inscrição `pending_payment` ou `confirmed` (`code: "duplicate_pending"` ou `"duplicate_confirmed"`).
-- O `RegistrationPage` já abre um modal direcionando para "Consultar minha inscrição".
-- O trigger `trg_prevent_duplicate_active_registration` no banco bloqueia mesmo se o frontend falhar.
-- **Não há retrabalho aqui** — vou apenas confirmar o teste após a limpeza.
+### 1.2 Editar dados
+- Botão "Editar" no Dialog → alterna para modo de formulário.
+- **Bloqueados (read-only):** `email`, `cpf`.
+- **Editáveis:** `full_name`, `phone`, `birth_date`, `area`, `congregation`, `church_role`, `church_function` + todos os campos dinâmicos (`custom_fields`).
+- Validação: nome obrigatório, telefone formatado.
+- `UPDATE registrations` + `audit_logs` (`action='registration_edited'`, com diff em `details`).
 
-## O que será feito
+## Parte 2 — Editor visual de Etiquetas (DK-1201, único e global)
 
-### Migration: `cleanup_canceled_duplicates`
-Apaga **definitivamente** (`DELETE`) as 11 inscrições canceladas que são duplicatas redundantes, com salvaguardas:
+### 2.1 Especificações
+- Brother DK-1201 — 29 mm × 90,3 mm (paisagem útil ~ 87 mm × 27 mm).
+- Layout em mm absolutos; impressão via `@page { size: 90.3mm 29mm; margin: 0 }`.
 
+### 2.2 Tabela `label_template` (singleton global)
+Migration:
 ```sql
-DO $$
-DECLARE victim RECORD; affected_orders uuid[] := ARRAY[]::uuid[];
-BEGIN
-  FOR victim IN
-    SELECT r.id, r.order_id, r.cpf, r.event_id, r.full_name
-    FROM public.registrations r
-    WHERE r.registration_status = 'canceled'
-      AND EXISTS (
-        SELECT 1 FROM public.registrations r2
-        WHERE r2.cpf = r.cpf AND r2.event_id = r.event_id AND r2.id <> r.id
-      )
-      AND NOT EXISTS (SELECT 1 FROM public.certificates c WHERE c.registration_id = r.id)
-      AND NOT EXISTS (SELECT 1 FROM public.checkin_logs cl WHERE cl.registration_id = r.id)
-  LOOP
-    INSERT INTO public.audit_logs(action, entity_type, entity_id, details)
-    VALUES('duplicate_canceled_registration_purged','registration',victim.id, ...);
-    DELETE FROM public.registrations WHERE id = victim.id;
-    -- track affected orders
-  END LOOP;
-  -- delete now-orphan canceled orders
-END $$;
+create table public.label_template (
+  id uuid primary key default gen_random_uuid(),
+  width_mm numeric not null default 90.3,
+  height_mm numeric not null default 29,
+  elements jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+alter table public.label_template enable row level security;
+create policy "Select label_template" on public.label_template for select using (true);
+create policy "Admins manage label_template" on public.label_template for all to authenticated
+  using (is_admin(auth.uid())) with check (is_admin(auth.uid()));
+-- seed: insert into public.label_template (elements) values ('[]'::jsonb);
+```
+Sempre lemos/escrevemos a única linha existente (singleton).
+
+Estrutura de cada elemento em `elements`:
+```json
+{
+  "id": "uuid",
+  "type": "text" | "qrcode",
+  "x_mm": 5, "y_mm": 4,
+  "width_mm": 30, "height_mm": 8,
+  "font_size_pt": 11,
+  "font_weight": "bold" | "normal",
+  "align": "left|center|right",
+  "source": "full_name" | "registration_code" | "congregation" | "church_role" | "church_function" | "area" | "qr_token" | "custom:<field_key>" | "static",
+  "static_text": null
+}
 ```
 
-**Garantias de segurança:**
-- ✅ NUNCA toca em `confirmed` (paga).
-- ✅ NUNCA toca em inscrição única (só apaga se houver outra para o mesmo CPF+evento).
-- ✅ NUNCA apaga registro com certificado emitido ou check-in (validado: 0 casos bloqueantes).
-- ✅ Cada exclusão fica rastreada em `audit_logs`.
-- ✅ Pedidos órfãos (sem nenhuma inscrição restante) e já cancelados também são removidos.
+### 2.3 Editor visual — `/admin/configuracoes/etiquetas`
+- Item adicionado no `AdminLayout` (sub-rota das Configurações ou item dedicado "Etiquetas").
+- Novo arquivo `src/pages/admin/AdminLabelEditor.tsx`:
+  - Canvas escalonado (4 px = 1 mm) representando 90,3 × 29 mm com borda/régua.
+  - Toolbar: "Adicionar texto", "Adicionar QR Code", "Salvar", "Pré-visualizar".
+  - Cada elemento arrastável e redimensionável (lib `react-rnd`).
+  - Painel lateral por elemento selecionado:
+    - **Origem do dado**: dropdown unificando campos fixos + união de `event_form_fields` ativos de **todos os eventos** (já que template é global) + opção "Texto fixo".
+    - Tamanho da fonte, peso, alinhamento (apenas texto).
+    - Posição/dimensões em mm (inputs numéricos).
+  - Botão "Pré-visualizar" mostra a etiqueta com dados de exemplo.
 
-### Correção visual em `AdminRegistrations.tsx`
-No badge da coluna "Status pagamento":
-- Se `registration_status === 'canceled'` → mostrar **"Cancelado"** (variant destructive).
-- Senão, comportamento atual (`Pago` / `Pendente`).
+### 2.4 Renderização para impressão
+Novo arquivo `src/lib/labelRenderer.tsx`:
+- Função `printLabels(registrations, template, customFieldsMap)`:
+  1. Abre `window.open('', '_blank')`.
+  2. Escreve HTML com `@page { size: 90.3mm 29mm; margin: 0 }`, `body { margin:0 }`.
+  3. Uma `<div>` por etiqueta com `width:90.3mm; height:29mm; page-break-after:always; position:relative`.
+  4. Cada elemento posicionado em `mm` absoluto.
+  5. QR Code: SVG inline gerado com lib `qrcode` (a partir de `registration.qr_token`).
+  6. Resolve valores: campos fixos diretos; custom via `registration.custom_fields[field_key]`.
+  7. Chama `window.print()` automaticamente; fecha no evento `afterprint`.
+- Para Brother QL: o usuário define a impressora térmica como destino padrão na primeira impressão. Como o `@page` define o tamanho exato, a impressora corta corretamente cada etiqueta.
 
-## Resultado esperado
-- Sara Costa terá **apenas 1 linha** na tela (pendente), com botão "Pagar" funcional.
-- 10 demais linhas duplicadas dos outros CPFs também desaparecem.
-- Tela do admin passa a mostrar corretamente "Cancelado" para qualquer registro cancelado que ainda exista (ex.: alguém que pagou individualmente saindo de um lote — o registro do lote original fica como cancelado).
-- Tentativa de re-cadastro por CPF já registrado continua bloqueada com mensagem clara (já implementado).
+### 2.5 Botões em `AdminRegistrations.tsx`
+
+**Individual** (na linha + Dialog):
+- "Imprimir etiqueta" → `printLabels([reg], template)`.
+
+**Lote**: botão "Imprimir etiquetas (N)" acima da tabela:
+- Imprime **todos os filtrados** atualmente (`filtered`), respeitando todos os filtros já existentes (busca, evento, status, filtros dinâmicos).
+- Confirmação com a contagem antes de abrir a janela.
+- Aviso se algum inscrito do lote estiver sem `qr_token` (pendente de pagamento) — opção de prosseguir mesmo assim ou pular esses registros.
+
+## Detalhes técnicos
+
+- Novas dependências:
+  - `react-rnd` — drag/resize no editor.
+  - `qrcode` — geração de SVG do QR para a janela de impressão (sem React).
+- `qr_token` só existe após pagamento aprovado. Para pendentes, etiqueta pode ser impressa sem QR (espaço em branco) ou com aviso — comportamento: **pular do lote por padrão e listar quais foram pulados**.
+- `audit_logs` populado em descredenciamento e edição.
 
 ## Arquivos afetados
-- **Nova migration** (apaga 11 linhas, registra em audit_logs).
-- `src/pages/admin/AdminRegistrations.tsx` — ajuste do badge.
 
-## Não será feito
-- Não tocaremos no caso especial de 2 confirmados do CPF 73658146249 (precisa decisão humana — qual dos dois recibos é o correto).
-- Não mudaremos o trigger nem a lógica de checkout (já estão certos).
+**Novos:**
+- `supabase/migrations/<ts>_label_template.sql`
+- `src/pages/admin/AdminLabelEditor.tsx`
+- `src/lib/labelRenderer.tsx`
+- `src/components/EditRegistrationDialog.tsx`
+
+**Modificados:**
+- `src/pages/admin/AdminRegistrations.tsx` — Descredenciar, Editar, Imprimir (individual + lote).
+- `src/pages/admin/AdminLayout.tsx` — item "Etiquetas".
+- `src/App.tsx` — rota `/admin/etiquetas`.
+- `src/lib/types.ts` — `LabelTemplate`, `LabelElement`.
+- `package.json` — `react-rnd`, `qrcode`.
