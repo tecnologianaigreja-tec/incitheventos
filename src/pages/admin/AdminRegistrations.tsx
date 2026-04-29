@@ -89,15 +89,28 @@ export default function AdminRegistrations() {
     if (data) setEvents(data as EventBasic[]);
   }
 
+  function buildRegistrationsQuery() {
+    let q: any = supabase.from("registrations").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
+    if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+    if (debouncedSearch) {
+      const escaped = debouncedSearch.replace(/[%,]/g, "");
+      q = q.or(
+        `full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`,
+      );
+    }
+    return q;
+  }
+
   async function load() {
     setLoading(true);
-    let query = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-    if (selectedEventId !== "all") {
-      query = query.eq("event_id", selectedEventId);
-    }
-    const { data } = await query;
+    const from = (page - 1) * REG_PAGE_SIZE;
+    const to = from + REG_PAGE_SIZE - 1;
+
+    const { data, count } = await buildRegistrationsQuery().range(from, to);
     const regs = (data || []) as unknown as RegistrationData[];
     setRegistrations(regs);
+    setTotalCount(count || 0);
 
     if (regs.length > 0) {
       const eventIds = [...new Set(regs.map(r => r.event_id))];
@@ -125,7 +138,7 @@ export default function AdminRegistrations() {
   }
 
   useEffect(() => { loadEvents(); loadLabelTemplate(); }, []);
-  useEffect(() => { load(); }, [selectedEventId]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch, statusFilter]);
 
   async function uncheckinRegistration(reg: RegistrationData) {
     const { data: { user } } = await supabase.auth.getUser();
