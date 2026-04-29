@@ -378,6 +378,12 @@ export default function AdminOrders() {
               </TableBody>
             </Table>
           </div>
+          <AdminPagination
+            page={ordersPage}
+            pageSize={ORDERS_PAGE_SIZE}
+            total={ordersTotal}
+            onPageChange={setOrdersPage}
+          />
         </TabsContent>
 
         <TabsContent value="proofs" className="space-y-4 pt-4">
