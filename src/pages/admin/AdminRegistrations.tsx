@@ -646,6 +646,20 @@ export default function AdminRegistrations() {
                 <Button size="sm" variant="outline" onClick={() => handlePrintSingle(selectedReg)} disabled={printing} className="gap-1.5">
                   <Printer className="h-3.5 w-3.5" /> Imprimir etiqueta
                 </Button>
+                {selectedReg.label_printed_at && (
+                  <Button size="sm" variant="outline" onClick={() => unmarkPrinted(selectedReg)} className="gap-1.5">
+                    <RotateCcw className="h-3.5 w-3.5" /> Marcar como não impresso
+                  </Button>
+                )}
+                {selectedReg.material_delivered_at ? (
+                  <Button size="sm" variant="outline" onClick={() => toggleMaterial(selectedReg, false)} className="gap-1.5">
+                    <RotateCcw className="h-3.5 w-3.5" /> Reverter material
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => toggleMaterial(selectedReg, true)} className="gap-1.5">
+                    <Package className="h-3.5 w-3.5" /> Marcar material entregue
+                  </Button>
+                )}
                 {selectedReg.checkin_status === "checked_in" && (
                   <Button size="sm" variant="destructive" onClick={() => setUncheckinTarget(selectedReg)} className="gap-1.5">
                     <UserMinus className="h-3.5 w-3.5" /> Descredenciar
