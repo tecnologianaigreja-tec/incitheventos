@@ -15,6 +15,10 @@ import { generateEventReportPdf } from "@/lib/reportPdf";
 import EditRegistrationDialog from "@/components/EditRegistrationDialog";
 import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
+import AdminPagination from "@/components/admin/AdminPagination";
+import { fetchAllPages } from "@/lib/fetchAllPages";
+
+const REG_PAGE_SIZE = 50;
 
 interface EventBasic {
   id: string;
@@ -38,6 +42,7 @@ export default function AdminRegistrations() {
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
@@ -46,6 +51,17 @@ export default function AdminRegistrations() {
   const [editingReg, setEditingReg] = useState<RegistrationData | null>(null);
   const [uncheckinTarget, setUncheckinTarget] = useState<RegistrationData | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, selectedEventId]);
 
   async function loadLabelTemplate() {
     const { data } = await supabase
