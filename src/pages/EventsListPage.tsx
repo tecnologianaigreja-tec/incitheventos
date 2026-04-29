@@ -537,11 +537,36 @@ export default function EventsListPage() {
                                           }
                                           return;
                                         }
-                                        // Individual order → direct redirect
+                                        // Individual order → direct redirect (or regenerate the link if missing)
                                         if (order.payment_link) {
                                           window.location.href = order.payment_link;
-                                        } else {
-                                          navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                          return;
+                                        }
+                                        // Link is missing (e.g. previous attempt failed at InfinitePay).
+                                        // Ask the backend to regenerate it instead of bouncing the
+                                        // user back to refilling the registration form.
+                                        try {
+                                          const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                                          const regenRes = await fetch(
+                                            `https://${projectId}.supabase.co/functions/v1/create-checkout`,
+                                            {
+                                              method: "POST",
+                                              headers: {
+                                                "Content-Type": "application/json",
+                                                apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                              },
+                                              body: JSON.stringify({ regenerate_for_order_id: r.order_id }),
+                                            }
+                                          );
+                                          const regenData = await regenRes.json().catch(() => ({}));
+                                          if (regenRes.ok && regenData?.payment_link) {
+                                            window.location.href = regenData.payment_link;
+                                            return;
+                                          }
+                                          toast.error(regenData?.error || "Não foi possível gerar o link de pagamento. Tente novamente em instantes.");
+                                        } catch (err2) {
+                                          console.error("Falha ao regenerar link de pagamento:", err2);
+                                          toast.error("Falha de conexão ao gerar link de pagamento. Tente novamente.");
                                         }
                                       } catch (err) {
                                         console.error("Falha ao abrir pagamento:", err);
