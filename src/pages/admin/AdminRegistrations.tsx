@@ -439,31 +439,74 @@ export default function AdminRegistrations() {
             <DialogTitle className="font-serif text-xl">Ficha do Inscrito</DialogTitle>
           </DialogHeader>
           {selectedReg && (
-            <div className="space-y-1">
-              {fixedDetails.map(({ label, getValue }) => {
-                const val = getValue(selectedReg);
-                if (val === "—" && !["Nome completo", "E-mail", "CPF", "Código de inscrição", "Tipo", "Status pagamento", "Check-in", "Data da inscrição"].includes(label)) return null;
-                return (
-                  <div key={label} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
-                    <span className="text-sm font-medium text-muted-foreground">{label}</span>
-                    <span className="text-sm text-foreground text-right">{val}</span>
-                  </div>
-                );
-              })}
-              {customFields.map(f => {
-                const val = getFieldValue(selectedReg, f.field_key);
-                if (!val) return null;
-                return (
-                  <div key={f.field_key} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
-                    <span className="text-sm font-medium text-muted-foreground">{f.field_label}</span>
-                    <span className="text-sm text-foreground text-right">{val}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2 pb-3 border-b border-border">
+                <Button size="sm" variant="outline" onClick={() => { setEditingReg(selectedReg); }} className="gap-1.5">
+                  <Pencil className="h-3.5 w-3.5" /> Editar dados
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handlePrintSingle(selectedReg)} disabled={printing} className="gap-1.5">
+                  <Printer className="h-3.5 w-3.5" /> Imprimir etiqueta
+                </Button>
+                {selectedReg.checkin_status === "checked_in" && (
+                  <Button size="sm" variant="destructive" onClick={() => setUncheckinTarget(selectedReg)} className="gap-1.5">
+                    <UserMinus className="h-3.5 w-3.5" /> Descredenciar
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-1">
+                {fixedDetails.map(({ label, getValue }) => {
+                  const val = getValue(selectedReg);
+                  if (val === "—" && !["Nome completo", "E-mail", "CPF", "Código de inscrição", "Tipo", "Status pagamento", "Check-in", "Data da inscrição"].includes(label)) return null;
+                  return (
+                    <div key={label} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
+                      <span className="text-sm font-medium text-muted-foreground">{label}</span>
+                      <span className="text-sm text-foreground text-right">{val}</span>
+                    </div>
+                  );
+                })}
+                {customFields.map(f => {
+                  const val = getFieldValue(selectedReg, f.field_key);
+                  if (!val) return null;
+                  return (
+                    <div key={f.field_key} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
+                      <span className="text-sm font-medium text-muted-foreground">{f.field_label}</span>
+                      <span className="text-sm text-foreground text-right">{val}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
+
+      <EditRegistrationDialog
+        registration={editingReg}
+        customFields={customFields}
+        open={!!editingReg}
+        onOpenChange={(o) => { if (!o) setEditingReg(null); }}
+        onSaved={() => { load(); setSelectedReg(null); }}
+      />
+
+      <AlertDialog open={!!uncheckinTarget} onOpenChange={(o) => { if (!o) setUncheckinTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Descredenciar participante?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {uncheckinTarget && `Isso removerá o check-in de ${uncheckinTarget.full_name} e apagará os registros de credenciamento associados. Não é possível desfazer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => uncheckinTarget && uncheckinRegistration(uncheckinTarget)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Descredenciar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
