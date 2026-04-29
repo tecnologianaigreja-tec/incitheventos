@@ -108,8 +108,74 @@ export default function AdminRegistrations() {
     setLoading(false);
   }
 
-  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => { loadEvents(); loadLabelTemplate(); }, []);
   useEffect(() => { load(); }, [selectedEventId]);
+
+  async function uncheckinRegistration(reg: RegistrationData) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("registrations").update({
+      checkin_status: "not_checked_in",
+      checkin_at: null,
+      checkin_by_user_id: null,
+    }).eq("id", reg.id);
+    if (error) { toast.error("Erro ao descredenciar"); return; }
+
+    await supabase.from("checkin_logs").delete().eq("registration_id", reg.id);
+    await supabase.from("audit_logs").insert({
+      action: "registration_uncheckin",
+      entity_type: "registration",
+      entity_id: reg.id,
+      actor_id: user?.id ?? null,
+      details: { full_name: reg.full_name, registration_code: reg.registration_code } as any,
+    });
+
+    toast.success(`${reg.full_name} descredenciado(a)`);
+    setUncheckinTarget(null);
+    setSelectedReg(null);
+    load();
+  }
+
+  async function handlePrintSingle(reg: RegistrationData) {
+    if (!labelTemplate || labelTemplate.elements.length === 0) {
+      toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
+      return;
+    }
+    setPrinting(true);
+    try {
+      await printLabels([reg as unknown as Record<string, any>], labelTemplate);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar etiqueta");
+    }
+    setPrinting(false);
+  }
+
+  async function handlePrintBatch() {
+    if (!labelTemplate || labelTemplate.elements.length === 0) {
+      toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
+      return;
+    }
+    const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
+    const eligible = usesQr ? filtered.filter(r => !!r.qr_token) : filtered;
+    const skipped = filtered.length - eligible.length;
+    if (eligible.length === 0) {
+      toast.error("Nenhum inscrito elegível (sem QR token disponível)");
+      return;
+    }
+    const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
+      (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
+    if (!window.confirm(msg)) return;
+
+    setPrinting(true);
+    try {
+      await printLabels(eligible as unknown as Record<string, any>[], labelTemplate);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar etiquetas");
+    }
+    setPrinting(false);
+  }
+
 
   async function manualCheckin(reg: RegistrationData) {
     if (reg.checkin_status === "checked_in") { toast.error("Já realizou check-in"); return; }
