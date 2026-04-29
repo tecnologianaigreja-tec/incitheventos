@@ -262,12 +262,29 @@ export default function AdminLabelEditor() {
                       {selected.type === "qrcode" ? (
                         <SelectItem value="qr_token">QR Code (check-in)</SelectItem>
                       ) : (
-                        sources.filter(s => s.key !== "qr_token").map(s => (
-                          <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
-                        ))
+                        <>
+                          {FIXED_SOURCES.filter(s => s.key !== "qr_token").map(s => (
+                            <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
+                          ))}
+                          {customFields.length > 0 && (
+                            <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground border-t mt-1">
+                              Campos do formulário
+                            </div>
+                          )}
+                          {customFields.map(f => (
+                            <SelectItem key={`custom:${f.field_key}`} value={`custom:${f.field_key}`}>
+                              {f.field_label}
+                            </SelectItem>
+                          ))}
+                        </>
                       )}
                     </SelectContent>
                   </Select>
+                  {selected.type === "text" && customFields.length > 0 && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Dica: dados específicos do seu evento (Congregação, Área, etc.) geralmente estão em <strong>Campos do formulário</strong>.
+                    </p>
+                  )}
                 </div>
 
                 {selected.type === "text" && selected.source === "static" && (
