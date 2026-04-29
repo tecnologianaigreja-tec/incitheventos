@@ -208,14 +208,14 @@ function ParticipantSection({ formData, onChange, errors, customFields, title }:
           />
           {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
         </div>
-        {/* Fixed: E-mail */}
+        {/* Fixed: E-mail (opcional) */}
         <div>
-          <Label>E-mail *</Label>
+          <Label>E-mail</Label>
           <Input
             type="email"
             value={formData.email || ""}
             onChange={e => update("email", e.target.value)}
-            placeholder="seu@email.com"
+            placeholder="seu@email.com (opcional)"
             className={errors.email ? "border-destructive" : ""}
           />
           {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
