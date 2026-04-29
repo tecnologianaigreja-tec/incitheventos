@@ -409,6 +409,7 @@ export type Database = {
           event_id: string
           expires_at: string | null
           id: string
+          invoice_slug: string | null
           order_code: string
           order_nsu: string | null
           paid_at: string | null
@@ -436,6 +437,7 @@ export type Database = {
           event_id: string
           expires_at?: string | null
           id?: string
+          invoice_slug?: string | null
           order_code: string
           order_nsu?: string | null
           paid_at?: string | null
@@ -463,6 +465,7 @@ export type Database = {
           event_id?: string
           expires_at?: string | null
           id?: string
+          invoice_slug?: string | null
           order_code?: string
           order_nsu?: string | null
           paid_at?: string | null

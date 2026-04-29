@@ -32,6 +32,7 @@ const respond = (body: Record<string, unknown>, status = 200) =>
   });
 
 async function generatePaymentLink(
+  supabase: any,
   supabaseUrl: string,
   event: any,
   order: any,
