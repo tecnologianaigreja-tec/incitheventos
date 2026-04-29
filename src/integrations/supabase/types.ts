@@ -370,6 +370,33 @@ export type Database = {
         }
         Relationships: []
       }
+      label_template: {
+        Row: {
+          created_at: string
+          elements: Json
+          height_mm: number
+          id: string
+          updated_at: string
+          width_mm: number
+        }
+        Insert: {
+          created_at?: string
+          elements?: Json
+          height_mm?: number
+          id?: string
+          updated_at?: string
+          width_mm?: number
+        }
+        Update: {
+          created_at?: string
+          elements?: Json
+          height_mm?: number
+          id?: string
+          updated_at?: string
+          width_mm?: number
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           buyer_document: string
