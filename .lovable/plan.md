@@ -1,117 +1,75 @@
-# Plano: Edição de inscritos + Editor de etiquetas DK-1201
+## Diagnóstico
 
-## Parte 1 — Painel de Inscritos: Descredenciar e Editar
+Investiguei o banco e o webhook. O código do webhook (`payment-webhook/index.ts`) está **correto** — quando ele é chamado pela InfinitePay, ele processa, atualiza o pedido para `approved` e confirma as inscrições (vide order `PED-9S4EAGQT` nos logs: tudo funcionou).
 
-Em `src/pages/admin/AdminRegistrations.tsx`, dentro do `Dialog` de detalhes:
+**O problema real:** existem **34 pedidos `pending`** no banco e **NENHUM deles tem registro em `payment_events`** — ou seja, a InfinitePay simplesmente **não chamou o webhook** para esses pagamentos. Isso pode ocorrer por:
 
-### 1.1 Descredenciar
-- Botão visível apenas quando `checkin_status === "checked_in"`.
-- Confirmação via `AlertDialog`.
-- Ação:
-  - `UPDATE registrations SET checkin_status='not_checked_in', checkin_at=null, checkin_by_user_id=null`
-  - **DELETE** dos registros em `checkin_logs` referentes a essa inscrição (sem manter histórico, conforme solicitado).
-  - Registra em `audit_logs` (`action='registration_uncheckin'`) — apenas auditoria administrativa, não no log de check-in.
+1. Pagamentos confirmados antes de configurarmos o `webhook_url` no checkout (links antigos).
+2. Falha esporádica de entrega da InfinitePay (sem retry automático configurado).
+3. Pagamento concluído mas o webhook ficou bloqueado/perdido.
 
-### 1.2 Editar dados
-- Botão "Editar" no Dialog → alterna para modo de formulário.
-- **Bloqueados (read-only):** `email`, `cpf`.
-- **Editáveis:** `full_name`, `phone`, `birth_date`, `area`, `congregation`, `church_role`, `church_function` + todos os campos dinâmicos (`custom_fields`).
-- Validação: nome obrigatório, telefone formatado.
-- `UPDATE registrations` + `audit_logs` (`action='registration_edited'`, com diff em `details`).
+Hoje o sistema só confia no webhook. Não há nenhum mecanismo de **fallback/reconciliação** — por isso o cliente paga, volta ao site e o status continua "pendente" pedindo para pagar de novo.
 
-## Parte 2 — Editor visual de Etiquetas (DK-1201, único e global)
+## Solução (3 frentes)
 
-### 2.1 Especificações
-- Brother DK-1201 — 29 mm × 90,3 mm (paisagem útil ~ 87 mm × 27 mm).
-- Layout em mm absolutos; impressão via `@page { size: 90.3mm 29mm; margin: 0 }`.
+### 1. Corrigir agora os 34 pedidos pendentes existentes
 
-### 2.2 Tabela `label_template` (singleton global)
-Migration:
-```sql
-create table public.label_template (
-  id uuid primary key default gen_random_uuid(),
-  width_mm numeric not null default 90.3,
-  height_mm numeric not null default 29,
-  elements jsonb not null default '[]'::jsonb,
-  updated_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
-);
-alter table public.label_template enable row level security;
-create policy "Select label_template" on public.label_template for select using (true);
-create policy "Admins manage label_template" on public.label_template for all to authenticated
-  using (is_admin(auth.uid())) with check (is_admin(auth.uid()));
--- seed: insert into public.label_template (elements) values ('[]'::jsonb);
-```
-Sempre lemos/escrevemos a única linha existente (singleton).
+A InfinitePay possui endpoint público de consulta por `invoice_slug`, mas como não temos o slug salvo, faremos a reconciliação **uma a uma via interface admin** (botão "Verificar pagamento" em cada pedido pendente) — a função consulta o status real na InfinitePay usando o `order_nsu` e, se aprovado, dispara o mesmo fluxo do webhook. Também ofereço uma **ação manual "Marcar como pago"** para o admin resolver casos onde já temos comprovante externo.
 
-Estrutura de cada elemento em `elements`:
-```json
-{
-  "id": "uuid",
-  "type": "text" | "qrcode",
-  "x_mm": 5, "y_mm": 4,
-  "width_mm": 30, "height_mm": 8,
-  "font_size_pt": 11,
-  "font_weight": "bold" | "normal",
-  "align": "left|center|right",
-  "source": "full_name" | "registration_code" | "congregation" | "church_role" | "church_function" | "area" | "qr_token" | "custom:<field_key>" | "static",
-  "static_text": null
-}
-```
+### 2. Reconciliação automática (cron)
 
-### 2.3 Editor visual — `/admin/configuracoes/etiquetas`
-- Item adicionado no `AdminLayout` (sub-rota das Configurações ou item dedicado "Etiquetas").
-- Novo arquivo `src/pages/admin/AdminLabelEditor.tsx`:
-  - Canvas escalonado (4 px = 1 mm) representando 90,3 × 29 mm com borda/régua.
-  - Toolbar: "Adicionar texto", "Adicionar QR Code", "Salvar", "Pré-visualizar".
-  - Cada elemento arrastável e redimensionável (lib `react-rnd`).
-  - Painel lateral por elemento selecionado:
-    - **Origem do dado**: dropdown unificando campos fixos + união de `event_form_fields` ativos de **todos os eventos** (já que template é global) + opção "Texto fixo".
-    - Tamanho da fonte, peso, alinhamento (apenas texto).
-    - Posição/dimensões em mm (inputs numéricos).
-  - Botão "Pré-visualizar" mostra a etiqueta com dados de exemplo.
+Criar uma edge function `reconcile-pending-payments` que roda periodicamente (chamada via cron Supabase a cada 10 min) e, para cada pedido `pending` com mais de 2 minutos:
+- Consulta a InfinitePay (`GET https://api.infinitepay.io/invoices/public/checkout/{invoice_slug}` ou via `order_nsu`).
+- Se aprovado → chama internamente a mesma rotina do webhook (extrair em helper compartilhado).
+- Loga em `audit_logs` (`reconciliation_run`).
 
-### 2.4 Renderização para impressão
-Novo arquivo `src/lib/labelRenderer.tsx`:
-- Função `printLabels(registrations, template, customFieldsMap)`:
-  1. Abre `window.open('', '_blank')`.
-  2. Escreve HTML com `@page { size: 90.3mm 29mm; margin: 0 }`, `body { margin:0 }`.
-  3. Uma `<div>` por etiqueta com `width:90.3mm; height:29mm; page-break-after:always; position:relative`.
-  4. Cada elemento posicionado em `mm` absoluto.
-  5. QR Code: SVG inline gerado com lib `qrcode` (a partir de `registration.qr_token`).
-  6. Resolve valores: campos fixos diretos; custom via `registration.custom_fields[field_key]`.
-  7. Chama `window.print()` automaticamente; fecha no evento `afterprint`.
-- Para Brother QL: o usuário define a impressora térmica como destino padrão na primeira impressão. Como o `@page` define o tamanho exato, a impressora corta corretamente cada etiqueta.
+Para isso precisamos salvar o `invoice_slug` que a InfinitePay retorna na criação do checkout (ajustar `create-checkout` para extrair `slug`/`invoice_slug` da resposta e gravar em `orders.payment_provider_reference` ou nova coluna `invoice_slug`).
 
-### 2.5 Botões em `AdminRegistrations.tsx`
+### 3. Reforçar o redirect (já existe, melhorar)
 
-**Individual** (na linha + Dialog):
-- "Imprimir etiqueta" → `printLabels([reg], template)`.
+Quando o cliente volta de `/pedido/:order_code?status=redirect`, a `OrderStatusPage` deve **forçar uma reconciliação síncrona** (chamar `reconcile-pending-payments` para aquele order_code) antes de mostrar "pendente". Assim, mesmo se o webhook atrasar, o status já fica correto na hora.
 
-**Lote**: botão "Imprimir etiquetas (N)" acima da tabela:
-- Imprime **todos os filtrados** atualmente (`filtered`), respeitando todos os filtros já existentes (busca, evento, status, filtros dinâmicos).
-- Confirmação com a contagem antes de abrir a janela.
-- Aviso se algum inscrito do lote estiver sem `qr_token` (pendente de pagamento) — opção de prosseguir mesmo assim ou pular esses registros.
+## Mudanças técnicas
 
-## Detalhes técnicos
+**Banco (migration):**
+- Adicionar coluna `orders.invoice_slug TEXT NULL` para guardar o slug retornado pela InfinitePay.
+- Backfill: tentar preencher para os pedidos existentes via consulta na InfinitePay (best-effort).
 
-- Novas dependências:
-  - `react-rnd` — drag/resize no editor.
-  - `qrcode` — geração de SVG do QR para a janela de impressão (sem React).
-- `qr_token` só existe após pagamento aprovado. Para pendentes, etiqueta pode ser impressa sem QR (espaço em branco) ou com aviso — comportamento: **pular do lote por padrão e listar quais foram pulados**.
-- `audit_logs` populado em descredenciamento e edição.
+**Edge functions:**
+- Nova: `supabase/functions/reconcile-pending-payments/index.ts`
+  - Aceita `{ order_code?: string }` (reconciliar 1) ou nada (reconciliar todos pending > 2min, limite 50).
+  - Para cada pedido: consulta InfinitePay, se `paid_amount > 0` → executa mesma lógica do webhook (atualiza order para `approved`, atualiza registrations para `confirmed`, gera `qr_token`, grava `audit_logs` + `payment_events` com `event_type='reconciliation'`).
+- Atualizar `create-checkout/index.ts`: extrair `slug` / `invoice_slug` da resposta InfinitePay e salvar em `orders.invoice_slug`.
+- Refatorar lógica de "aplicar pagamento aprovado" em helper compartilhado entre `payment-webhook` e `reconcile-pending-payments` (duplicar inline é ok também — ambas funções pequenas).
 
-## Arquivos afetados
+**Frontend:**
+- `src/pages/admin/AdminOrders.tsx`: adicionar botões nos pedidos `pending`:
+  - **"Verificar pagamento"** → chama `reconcile-pending-payments` com `order_code`. Se aprovado, recarrega a lista mostrando confirmado.
+  - **"Marcar como pago manualmente"** (apenas superadmin) → confirmação dupla + chama nova rota interna que aplica `approved` e registra audit_log com motivo.
+- `src/pages/OrderStatusPage.tsx`: ao montar com `?status=redirect`, chamar `reconcile-pending-payments` antes de exibir status final (com loading "Verificando pagamento…").
+- `src/pages/admin/AdminRegistrations.tsx`: já tem ação de descredenciar; não precisa mudar — mas o filtro/lista refletirá automaticamente o novo status.
 
-**Novos:**
-- `supabase/migrations/<ts>_label_template.sql`
-- `src/pages/admin/AdminLabelEditor.tsx`
-- `src/lib/labelRenderer.tsx`
-- `src/components/EditRegistrationDialog.tsx`
+**Cron (opcional, recomendado):**
+- Documentar como o admin pode agendar via Supabase `pg_cron` chamando a função a cada 10 min. Como alternativa simples, disparamos a reconciliação automaticamente toda vez que a página `AdminOrders` carrega (debounced).
 
-**Modificados:**
-- `src/pages/admin/AdminRegistrations.tsx` — Descredenciar, Editar, Imprimir (individual + lote).
-- `src/pages/admin/AdminLayout.tsx` — item "Etiquetas".
-- `src/App.tsx` — rota `/admin/etiquetas`.
-- `src/lib/types.ts` — `LabelTemplate`, `LabelElement`.
-- `package.json` — `react-rnd`, `qrcode`.
+## Plano de execução
+
+1. Migration: adicionar `orders.invoice_slug`.
+2. Atualizar `create-checkout` para salvar o slug.
+3. Criar edge function `reconcile-pending-payments`.
+4. UI admin: botões "Verificar pagamento" e "Marcar como pago manualmente" em `AdminOrders`.
+5. `OrderStatusPage`: reconciliação automática no retorno do checkout.
+6. **Reconciliar imediatamente os 34 pedidos pendentes atuais** rodando a função uma vez (ela tentará confirmar todos os realmente pagos; os não pagos permanecem `pending`).
+7. Audit logs para toda mudança manual.
+
+## Detalhes técnicos importantes
+
+- **Idempotência:** a função de reconciliação verifica `order.payment_status` antes de aplicar — nunca rebaixa de `approved`.
+- **Validação de valor:** se `paid_amount` ≠ `total_price_cents`, registra `payment_amount_mismatch` em `audit_logs` (igual ao webhook).
+- **Sem custo de risco:** "Marcar como pago manualmente" exige confirmação textual e fica registrado com `actor_id` no audit_log para auditoria.
+- O endpoint público da InfinitePay para consultar status via `invoice_slug` é `https://api.infinitepay.io/invoices/public/checkout/{slug}`. Se não funcionar para `order_nsu` direto, dependeremos do slug — por isso o passo 1 e 2 são pré-requisitos para reconciliação automática 100%.
+
+## O que NÃO vou mudar
+
+- Não vou mexer em RLS, schema de registrations, fluxo de criação ou lógica de duplicidade.
+- Não vou alterar o webhook em si (ele está correto) — só compartilhar a lógica de "aplicar aprovado".
