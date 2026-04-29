@@ -72,18 +72,21 @@ export default function AdminLabelEditor() {
 
   function addText() {
     if (!template) return;
+    const textCount = template.elements.filter(e => e.type === "text").length;
+    // Cascade new elements so they don't stack invisibly on top of each other
+    const offset = (textCount % 5) * 2;
     const el: LabelElement = {
       id: newId(),
       type: "text",
-      x_mm: 4,
-      y_mm: 4,
+      x_mm: Math.min(4 + offset, Math.max(0, template.width_mm - 42)),
+      y_mm: Math.min(4 + textCount * 7, Math.max(0, template.height_mm - 7)),
       width_mm: 40,
       height_mm: 6,
       font_size_pt: 11,
-      font_weight: "bold",
+      font_weight: "normal",
       align: "left",
-      source: "full_name",
-      static_text: null,
+      source: "static",
+      static_text: `Texto ${textCount + 1}`,
     };
     setTemplate({ ...template, elements: [...template.elements, el] });
     setSelectedId(el.id);
