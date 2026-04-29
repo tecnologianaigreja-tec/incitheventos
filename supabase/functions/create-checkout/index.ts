@@ -387,7 +387,18 @@ async function generatePaymentLink(
     console.log("InfinitePay response:", ipRes.status, JSON.stringify(ipData));
 
     if (ipRes.ok) {
-      return ipData.checkout_url || ipData.url || ipData.link || null;
+      const link = ipData.checkout_url || ipData.url || ipData.link || null;
+      const slug = ipData.slug || ipData.invoice_slug || null;
+      // Persist the invoice slug so we can later check payment status
+      // even if the webhook is delayed or missed.
+      if (slug) {
+        try {
+          await supabase.from("orders").update({ invoice_slug: slug }).eq("id", order.id);
+        } catch (e) {
+          console.warn("Could not persist invoice_slug:", e);
+        }
+      }
+      return link;
     } else {
       console.error("InfinitePay error response:", ipData);
       return null;

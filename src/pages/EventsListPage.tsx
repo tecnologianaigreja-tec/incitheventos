@@ -131,6 +131,26 @@ export default function EventsListPage() {
     setSelectedReg(null);
 
     try {
+      // Ask backend to reconcile any pending orders for this CPF before
+      // we render — this ensures already-paid registrations show as
+      // "Confirmada" instead of asking the user to pay again.
+      try {
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({ cpf: digits }),
+          }
+        );
+      } catch (e) {
+        console.warn("Reconciliação prévia falhou (segue normalmente):", e);
+      }
+
       const { data, error } = await supabase
         .from("registrations")
         .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
@@ -431,15 +451,48 @@ export default function EventsListPage() {
                                     onClick={async (e) => {
                                       e.stopPropagation();
                                       try {
+                                        // Reconcile this order's payment FIRST.
+                                        // If InfinitePay already considers it paid, the
+                                        // backend will mark the registration as confirmed
+                                        // and we must NOT send the user to checkout again.
+                                        try {
+                                          const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                                          const recRes = await fetch(
+                                            `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
+                                            {
+                                              method: "POST",
+                                              headers: {
+                                                "Content-Type": "application/json",
+                                                apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                              },
+                                              body: JSON.stringify({ order_id: r.order_id }),
+                                            }
+                                          );
+                                          const recData = await recRes.json().catch(() => ({}));
+                                          if (recData?.approved > 0) {
+                                            toast.success("Esta inscrição já foi paga e está confirmada.");
+                                            await handleCpfLookup();
+                                            return;
+                                          }
+                                        } catch (e2) {
+                                          console.warn("Reconciliação falhou; segue tentando o pagamento.", e2);
+                                        }
+
                                         const { data: order, error } = await supabase
                                           .from("orders")
-                                          .select("payment_link, order_code, purchase_type, total_price_cents, participants_count, unit_price_cents")
+                                          .select("payment_link, payment_status, order_code, purchase_type, total_price_cents, participants_count, unit_price_cents")
                                           .eq("id", r.order_id)
                                           .maybeSingle();
                                         if (error || !order) {
                                           console.error("Erro ao buscar pedido:", error);
                                           toast.error("Não foi possível abrir o pagamento. Refazendo a inscrição...");
                                           navigate(`/evento/${(r.events as any).slug}/inscricao`);
+                                          return;
+                                        }
+                                        // If status changed under us, just refresh
+                                        if (order.payment_status === "approved") {
+                                          toast.success("Pagamento já confirmado.");
+                                          await handleCpfLookup();
                                           return;
                                         }
                                         // Batch order → open split sub-dialog and fetch preview
@@ -567,12 +620,43 @@ export default function EventsListPage() {
                             <Button
                               className="gap-2 gradient-gold text-white shadow-gold hover:opacity-90"
                               onClick={async () => {
-                                // Fetch order payment link
+                                // First, ask backend to verify with InfinitePay if this
+                                // order was already paid. If so, do not redirect to checkout.
+                                try {
+                                  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                                  const recRes = await fetch(
+                                    `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
+                                    {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                      },
+                                      body: JSON.stringify({ order_id: selectedReg.order_id }),
+                                    }
+                                  );
+                                  const recData = await recRes.json().catch(() => ({}));
+                                  if (recData?.approved > 0) {
+                                    toast.success("Esta inscrição já foi paga e está confirmada.");
+                                    await handleCpfLookup();
+                                    setSelectedReg(null);
+                                    return;
+                                  }
+                                } catch (e) {
+                                  console.warn("Reconciliação falhou:", e);
+                                }
+
                                 const { data: order } = await supabase
                                   .from("orders")
-                                  .select("payment_link, order_code")
+                                  .select("payment_link, payment_status, order_code")
                                   .eq("id", selectedReg.order_id)
                                   .single();
+                                if (order?.payment_status === "approved") {
+                                  toast.success("Pagamento já confirmado.");
+                                  await handleCpfLookup();
+                                  setSelectedReg(null);
+                                  return;
+                                }
                                 if (order?.payment_link) {
                                   window.location.href = order.payment_link;
                                 } else {
