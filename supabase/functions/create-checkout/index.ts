@@ -154,6 +154,14 @@ Deno.serve(async (req) => {
     if (!isValidCPF(buyer.cpf)) {
       return new Response(JSON.stringify({ error: "CPF do responsável inválido" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    // E-mail do responsável é obrigatório (InfinitePay exige customer.email)
+    const buyerEmailCandidate = (buyer.email || participants[0]?.email || "").trim();
+    if (!buyerEmailCandidate || !isValidEmail(buyerEmailCandidate)) {
+      return new Response(
+        JSON.stringify({ error: "E-mail do responsável é obrigatório para o pagamento." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Validate each participant
     for (const p of participants) {
