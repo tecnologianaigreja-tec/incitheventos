@@ -280,9 +280,9 @@ export default function AdminLabelEditor() {
                       )}
                     </SelectContent>
                   </Select>
-                  {selected.type === "text" && selected.source !== "static" && !resolveSampleValue(selected.source) && (
-                    <p className="mt-1 text-[11px] text-amber-600">
-                      Dica: se este dado for específico do seu evento (ex.: Congregação, Área), prefira selecionar a opção em "Campos do formulário".
+                  {selected.type === "text" && customFields.length > 0 && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Dica: dados específicos do seu evento (Congregação, Área, etc.) geralmente estão em <strong>Campos do formulário</strong>.
                     </p>
                   )}
                 </div>
