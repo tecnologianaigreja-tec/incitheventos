@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Calendar, MapPin, ChevronRight, BookOpen, Search, QrCode, Download, CreditCard } from "lucide-react";
+import PaymentProofUpload from "@/components/PaymentProofUpload";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
