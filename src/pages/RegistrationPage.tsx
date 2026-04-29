@@ -382,14 +382,14 @@ export default function RegistrationPage() {
     if (isFull) { toast.error("Vagas esgotadas para este evento"); return; }
 
     if (tab === "individual") {
-      const errs = validateForm(individual, customFields);
+      const errs = validateForm(individual, customFields, { requireEmail: true });
       setIndividualErrors(errs);
       if (Object.keys(errs).length > 0) { toast.error("Corrija os campos em destaque"); return; }
       if (!consentTerms || !consentData) { toast.error("Aceite os termos para continuar"); return; }
     } else {
-      // Validate buyer: different validation based on participation
+      // Validate buyer: different validation based on participation. Buyer e-mail is always required.
       const bErrs = buyerIsParticipant
-        ? validateForm(buyer, customFields)
+        ? validateForm(buyer, customFields, { requireEmail: true })
         : validateBuyerOnly(buyer);
       setBuyerErrors(bErrs);
       const pErrs = participants.map(p => validateForm(p, customFields));
