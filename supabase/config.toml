@@ -15,3 +15,12 @@ verify_jwt = false
 [functions.manual-confirm-order]
 verify_jwt = false
 
+[functions.submit-payment-proof]
+verify_jwt = false
+
+[functions.review-payment-proof]
+verify_jwt = false
+
+[functions.bulk-confirm-orders]
+verify_jwt = false
+
