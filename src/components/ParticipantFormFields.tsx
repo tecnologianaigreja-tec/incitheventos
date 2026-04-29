@@ -95,7 +95,7 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
             type="email"
             value={value.email}
             onChange={(e) => update("email", e.target.value)}
-            placeholder="seu@email.com"
+            placeholder="seu@email.com (opcional)"
             className={errors.email ? "border-destructive" : ""}
           />
           {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
