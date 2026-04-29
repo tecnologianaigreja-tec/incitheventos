@@ -12,6 +12,10 @@ import { Label } from "@/components/ui/label";
 import CertificateTemplateEditor from "@/components/CertificateTemplateEditor";
 import { generateCertificatePdf } from "@/lib/certificatePdf";
 import { format } from "date-fns";
+import AdminPagination from "@/components/admin/AdminPagination";
+import { fetchAllPages } from "@/lib/fetchAllPages";
+
+const CERTS_PAGE_SIZE = 50;
 
 export default function AdminCertificates() {
   const [registrations, setRegistrations] = useState<RegistrationData[]>([]);
