@@ -70,7 +70,7 @@ export default function AdminCertificates() {
   }
 
   useEffect(() => { loadEvents(); }, []);
-  useEffect(() => { if (selectedEventId) loadData(); }, [selectedEventId]);
+  useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page]);
 
   async function issueCertificate(reg: RegistrationData) {
     const event = events.find(e => e.id === reg.event_id);
