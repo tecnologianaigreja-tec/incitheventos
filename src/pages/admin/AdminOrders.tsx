@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import AdminPagination from "@/components/admin/AdminPagination";
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente", approved: "Aprovado", refused: "Recusado",
@@ -35,11 +36,14 @@ interface PaymentProof {
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<OrderData[]>([]);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [ordersPage, setOrdersPage] = useState(1);
   const [proofs, setProofs] = useState<PaymentProof[]>([]);
   const [loading, setLoading] = useState(true);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcilingAll, setReconcilingAll] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Manual confirmation dialog (single)
   const [manualOrder, setManualOrder] = useState<OrderData | null>(null);
@@ -60,17 +64,44 @@ export default function AdminOrders() {
   const [reviewNote, setReviewNote] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
+  const ORDERS_PAGE_SIZE = 50;
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset page on search change
+  useEffect(() => { setOrdersPage(1); }, [debouncedSearch]);
+
   async function load() {
+    const from = (ordersPage - 1) * ORDERS_PAGE_SIZE;
+    const to = from + ORDERS_PAGE_SIZE - 1;
+
+    let ordersQuery = supabase
+      .from("orders")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false });
+
+    if (debouncedSearch) {
+      const escaped = debouncedSearch.replace(/[%,]/g, "");
+      ordersQuery = ordersQuery.or(
+        `order_code.ilike.%${escaped}%,buyer_name.ilike.%${escaped}%,buyer_email.ilike.%${escaped}%,buyer_document.ilike.%${escaped}%`,
+      );
+    }
+
     const [ordersRes, proofsRes] = await Promise.all([
-      supabase.from("orders").select("*").order("created_at", { ascending: false }),
-      supabase.from("payment_proofs").select("*").order("created_at", { ascending: false }),
+      ordersQuery.range(from, to),
+      supabase.from("payment_proofs").select("*").order("created_at", { ascending: false }).limit(500),
     ]);
     setOrders((ordersRes.data || []) as unknown as OrderData[]);
+    setOrdersTotal(ordersRes.count || 0);
     setProofs((proofsRes.data || []) as PaymentProof[]);
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [ordersPage, debouncedSearch]);
 
   async function callFunction(name: string, payload: Record<string, unknown>, withAuth = false) {
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -207,13 +238,9 @@ export default function AdminOrders() {
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
-  const q = search.trim().toLowerCase();
-  const filteredOrders = q
-    ? orders.filter(o =>
-        (o.buyer_name || "").toLowerCase().includes(q) ||
-        (o.order_code || "").toLowerCase().includes(q) ||
-        (o.buyer_email || "").toLowerCase().includes(q))
-    : orders;
+  // Search is applied server-side via .or() in load()
+  const filteredOrders = orders;
+  const q = debouncedSearch;
 
   const pendingFilteredIds = filteredOrders.filter(o => o.payment_status === "pending").map(o => o.id);
   const allPendingSelected = pendingFilteredIds.length > 0 && pendingFilteredIds.every(id => selectedIds.has(id));
@@ -351,6 +378,12 @@ export default function AdminOrders() {
               </TableBody>
             </Table>
           </div>
+          <AdminPagination
+            page={ordersPage}
+            pageSize={ORDERS_PAGE_SIZE}
+            total={ordersTotal}
+            onPageChange={setOrdersPage}
+          />
         </TabsContent>
 
         <TabsContent value="proofs" className="space-y-4 pt-4">

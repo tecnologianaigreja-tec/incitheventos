@@ -15,6 +15,10 @@ import { generateEventReportPdf } from "@/lib/reportPdf";
 import EditRegistrationDialog from "@/components/EditRegistrationDialog";
 import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
+import AdminPagination from "@/components/admin/AdminPagination";
+import { fetchAllPages } from "@/lib/fetchAllPages";
+
+const REG_PAGE_SIZE = 50;
 
 interface EventBasic {
   id: string;
@@ -38,6 +42,7 @@ export default function AdminRegistrations() {
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
@@ -46,6 +51,17 @@ export default function AdminRegistrations() {
   const [editingReg, setEditingReg] = useState<RegistrationData | null>(null);
   const [uncheckinTarget, setUncheckinTarget] = useState<RegistrationData | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, selectedEventId]);
 
   async function loadLabelTemplate() {
     const { data } = await supabase
@@ -73,15 +89,28 @@ export default function AdminRegistrations() {
     if (data) setEvents(data as EventBasic[]);
   }
 
+  function buildRegistrationsQuery() {
+    let q: any = supabase.from("registrations").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
+    if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+    if (debouncedSearch) {
+      const escaped = debouncedSearch.replace(/[%,]/g, "");
+      q = q.or(
+        `full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`,
+      );
+    }
+    return q;
+  }
+
   async function load() {
     setLoading(true);
-    let query = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-    if (selectedEventId !== "all") {
-      query = query.eq("event_id", selectedEventId);
-    }
-    const { data } = await query;
+    const from = (page - 1) * REG_PAGE_SIZE;
+    const to = from + REG_PAGE_SIZE - 1;
+
+    const { data, count } = await buildRegistrationsQuery().range(from, to);
     const regs = (data || []) as unknown as RegistrationData[];
     setRegistrations(regs);
+    setTotalCount(count || 0);
 
     if (regs.length > 0) {
       const eventIds = [...new Set(regs.map(r => r.event_id))];
@@ -109,7 +138,7 @@ export default function AdminRegistrations() {
   }
 
   useEffect(() => { loadEvents(); loadLabelTemplate(); }, []);
-  useEffect(() => { load(); }, [selectedEventId]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch, statusFilter]);
 
   async function uncheckinRegistration(reg: RegistrationData) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -155,19 +184,30 @@ export default function AdminRegistrations() {
       toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
       return;
     }
-    const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
-    const eligible = usesQr ? filtered.filter(r => !!r.qr_token) : filtered;
-    const skipped = filtered.length - eligible.length;
-    if (eligible.length === 0) {
-      toast.error("Nenhum inscrito elegível (sem QR token disponível)");
-      return;
-    }
-    const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
-      (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
-    if (!window.confirm(msg)) return;
-
     setPrinting(true);
     try {
+      // Fetch all matching registrations across pages (server-side filters preserved)
+      const all = await fetchAllPages<RegistrationData>(() => {
+        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
+        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
+        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+        if (debouncedSearch) {
+          const escaped = debouncedSearch.replace(/[%,]/g, "");
+          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
+        }
+        return q;
+      });
+      const allFiltered = applyDynamicFilters(all, dynamicFilters);
+      const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
+      const eligible = usesQr ? allFiltered.filter(r => !!r.qr_token) : allFiltered;
+      const skipped = allFiltered.length - eligible.length;
+      if (eligible.length === 0) {
+        toast.error("Nenhum inscrito elegível (sem QR token disponível)");
+        return;
+      }
+      const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
+        (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
+      if (!window.confirm(msg)) return;
       await printLabels(eligible as unknown as Record<string, any>[], labelTemplate);
     } catch (e) {
       console.error(e);
@@ -201,16 +241,9 @@ export default function AdminRegistrations() {
     load();
   }
 
-  const filtered = applyDynamicFilters(
-    registrations.filter(r => {
-      const matchSearch = !search || r.full_name.toLowerCase().includes(search.toLowerCase()) ||
-        r.email.toLowerCase().includes(search.toLowerCase()) ||
-        r.registration_code.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === "all" || r.registration_status === statusFilter;
-      return matchSearch && matchStatus;
-    }),
-    dynamicFilters
-  );
+  // Server-side already applied search + status + event filter; only dynamic
+  // (custom_fields jsonb) filters are applied here over the current page.
+  const filtered = applyDynamicFilters(registrations, dynamicFilters);
 
   async function handleDownloadReport() {
     const eventData = selectedEventId !== "all"
@@ -222,7 +255,7 @@ export default function AdminRegistrations() {
       return;
     }
 
-    if (filtered.length === 0) {
+    if (totalCount === 0) {
       toast.error("Nenhum inscrito para gerar relatório");
       return;
     }
@@ -230,6 +263,24 @@ export default function AdminRegistrations() {
     setGeneratingReport(true);
 
     try {
+      // Fetch all matching registrations across pages
+      const all = await fetchAllPages<RegistrationData>(() => {
+        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
+        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
+        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+        if (debouncedSearch) {
+          const escaped = debouncedSearch.replace(/[%,]/g, "");
+          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
+        }
+        return q;
+      });
+      const allFiltered = applyDynamicFilters(all, dynamicFilters);
+
+      if (allFiltered.length === 0) {
+        toast.error("Nenhum inscrito para gerar relatório");
+        return;
+      }
+
       // Build filter description
       const filterParts: string[] = [];
       if (search) filterParts.push(`Busca: "${search}"`);
@@ -264,7 +315,7 @@ export default function AdminRegistrations() {
 
       const doc = generateEventReportPdf({
         event: eventInfo,
-        registrations: filtered,
+        registrations: allFiltered,
         filterDescription: filterParts.length > 0 ? filterParts.join(" | ") : null,
       });
 
@@ -302,22 +353,22 @@ export default function AdminRegistrations() {
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
         <div className="flex items-center gap-3 flex-wrap">
-          <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+          <Badge variant="outline" className="text-sm">{totalCount} resultado{totalCount !== 1 ? "s" : ""}</Badge>
           <Button
             variant="outline"
             size="sm"
             onClick={handlePrintBatch}
-            disabled={printing || filtered.length === 0}
+            disabled={printing || totalCount === 0}
             className="gap-2"
           >
             {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-            Imprimir etiquetas ({filtered.length})
+            Imprimir etiquetas ({totalCount})
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={handleDownloadReport}
-            disabled={generatingReport || filtered.length === 0}
+            disabled={generatingReport || totalCount === 0}
             className="gap-2"
           >
             {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
@@ -426,11 +477,18 @@ export default function AdminRegistrations() {
               </TableRow>
             ))}
             {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Nenhum inscrito encontrado</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{totalCount === 0 ? "Nenhum inscrito encontrado" : "Nenhum resultado nos filtros aplicados"}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
       </div>
+
+      <AdminPagination
+        page={page}
+        pageSize={REG_PAGE_SIZE}
+        total={totalCount}
+        onPageChange={setPage}
+      />
 
       {/* Registration Detail Dialog */}
       <Dialog open={!!selectedReg} onOpenChange={(open) => { if (!open) setSelectedReg(null); }}>

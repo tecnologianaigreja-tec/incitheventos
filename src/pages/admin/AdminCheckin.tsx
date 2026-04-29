@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
+import AdminPagination from "@/components/admin/AdminPagination";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 50;
 
 export default function AdminCheckin() {
   const [scannerActive, setScannerActive] = useState(false);
@@ -25,18 +26,40 @@ export default function AdminCheckin() {
   const [customFields, setCustomFields] = useState<EventFormField[]>([]);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [searchCheckedIn, setSearchCheckedIn] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchCheckedIn.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchCheckedIn]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   const loadCheckedIn = useCallback(async () => {
-    const { data } = await supabase
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let query = supabase
       .from("registrations")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("checkin_status", "checked_in")
       .order("checkin_at", { ascending: false });
+
+    if (debouncedSearch) {
+      const escaped = debouncedSearch.replace(/[%,]/g, "");
+      query = query.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
+    }
+
+    const { data, count } = await query.range(from, to);
     const regs = (data || []) as unknown as RegistrationData[];
     setCheckedIn(regs);
+    setTotalCount(count || 0);
 
-    // Load custom fields for filtering
+    // Load custom fields for filtering (based on the visible page)
     if (regs.length > 0) {
       const eventIds = [...new Set(regs.map(r => r.event_id))];
       const { data: fields } = await supabase
@@ -57,7 +80,7 @@ export default function AdminCheckin() {
         setCustomFields(unique);
       }
     }
-  }, []);
+  }, [page, debouncedSearch]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
 
@@ -200,22 +223,8 @@ export default function AdminCheckin() {
 
   useEffect(() => { return () => { stopScanner(); }; }, []);
 
-  // Filter checked-in list
-  const filteredCheckedIn = applyDynamicFilters(
-    checkedIn.filter(r => {
-      if (!searchCheckedIn) return true;
-      return r.full_name.toLowerCase().includes(searchCheckedIn.toLowerCase()) ||
-        r.email.toLowerCase().includes(searchCheckedIn.toLowerCase());
-    }),
-    dynamicFilters
-  );
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredCheckedIn.length / PAGE_SIZE));
-  const paged = filteredCheckedIn.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [dynamicFilters, searchCheckedIn]);
+  // Dynamic filters apply over the current page only (visual only — informative for admins)
+  const filteredCheckedIn = applyDynamicFilters(checkedIn, dynamicFilters);
 
   return (
     <div className="space-y-6">
@@ -229,7 +238,7 @@ export default function AdminCheckin() {
               <Users className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{checkedIn.length}</p>
+              <p className="text-2xl font-bold text-foreground">{totalCount}</p>
               <p className="text-xs text-muted-foreground">Total presentes</p>
             </div>
           </CardContent>
@@ -366,7 +375,7 @@ export default function AdminCheckin() {
               Participantes presentes
             </h3>
             <Badge variant="outline" className="text-sm">
-              {dynamicFilters.length > 0 ? `${filteredCheckedIn.length} de ${checkedIn.length}` : checkedIn.length} presente{checkedIn.length !== 1 ? "s" : ""}
+              {totalCount} presente{totalCount !== 1 ? "s" : ""}
             </Badge>
           </div>
 
@@ -391,7 +400,7 @@ export default function AdminCheckin() {
 
           {filteredCheckedIn.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              {checkedIn.length === 0 ? "Nenhum check-in realizado ainda" : "Nenhum resultado para os filtros aplicados"}
+              {totalCount === 0 ? "Nenhum check-in realizado ainda" : "Nenhum resultado para os filtros aplicados"}
             </p>
           ) : (
             <>
@@ -406,7 +415,7 @@ export default function AdminCheckin() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paged.map((r, i) => (
+                    {filteredCheckedIn.map((r, i) => (
                       <TableRow key={r.id}>
                         <TableCell className="text-muted-foreground">{(page - 1) * PAGE_SIZE + i + 1}</TableCell>
                         <TableCell className="font-medium">{r.full_name}</TableCell>
@@ -420,18 +429,12 @@ export default function AdminCheckin() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 pt-2">
-                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm text-muted-foreground">Página {page} de {totalPages}</span>
-                  <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
+              <AdminPagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={totalCount}
+                onPageChange={setPage}
+              />
             </>
           )}
         </CardContent>

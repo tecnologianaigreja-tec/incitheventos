@@ -12,6 +12,10 @@ import { Label } from "@/components/ui/label";
 import CertificateTemplateEditor from "@/components/CertificateTemplateEditor";
 import { generateCertificatePdf } from "@/lib/certificatePdf";
 import { format } from "date-fns";
+import AdminPagination from "@/components/admin/AdminPagination";
+import { fetchAllPages } from "@/lib/fetchAllPages";
+
+const CERTS_PAGE_SIZE = 50;
 
 export default function AdminCertificates() {
   const [registrations, setRegistrations] = useState<RegistrationData[]>([]);
@@ -20,6 +24,12 @@ export default function AdminCertificates() {
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [issuingAll, setIssuingAll] = useState(false);
+
+  // Reset page when event changes
+  useEffect(() => { setPage(1); }, [selectedEventId]);
 
   async function loadEvents() {
     const { data } = await supabase.from("events").select("id, title, status, start_date, end_date, workload_hours");
@@ -32,17 +42,35 @@ export default function AdminCertificates() {
   async function loadData() {
     if (!selectedEventId) { setLoading(false); return; }
     setLoading(true);
-    const [regsRes, certsRes] = await Promise.all([
-      supabase.from("registrations").select("*").eq("event_id", selectedEventId).eq("payment_status", "approved").eq("checkin_status", "checked_in"),
-      supabase.from("certificates").select("*"),
-    ]);
-    setRegistrations((regsRes.data || []) as unknown as RegistrationData[]);
-    setCertificates(certsRes.data || []);
+    const from = (page - 1) * CERTS_PAGE_SIZE;
+    const to = from + CERTS_PAGE_SIZE - 1;
+
+    const regsRes = await supabase
+      .from("registrations")
+      .select("*", { count: "exact" })
+      .eq("event_id", selectedEventId)
+      .eq("payment_status", "approved")
+      .eq("checkin_status", "checked_in")
+      .order("full_name", { ascending: true })
+      .range(from, to);
+
+    const regs = (regsRes.data || []) as unknown as RegistrationData[];
+    setRegistrations(regs);
+    setTotalCount(regsRes.count || 0);
+
+    // Load only certificates for visible registrations
+    if (regs.length > 0) {
+      const ids = regs.map(r => r.id);
+      const certsRes = await supabase.from("certificates").select("*").in("registration_id", ids);
+      setCertificates(certsRes.data || []);
+    } else {
+      setCertificates([]);
+    }
     setLoading(false);
   }
 
   useEffect(() => { loadEvents(); }, []);
-  useEffect(() => { if (selectedEventId) loadData(); }, [selectedEventId]);
+  useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page]);
 
   async function issueCertificate(reg: RegistrationData) {
     const event = events.find(e => e.id === reg.event_id);
@@ -76,10 +104,65 @@ export default function AdminCertificates() {
   }
 
   async function issueAll() {
-    const eligible = registrations.filter(r => !certificates.find(c => c.registration_id === r.id));
-    if (eligible.length === 0) { toast.info("Todos os certificados elegíveis já foram emitidos"); return; }
-    for (const reg of eligible) {
-      await issueCertificate(reg);
+    const event = events.find(e => e.id === selectedEventId);
+    if (!event || (event.status !== "closed" && event.status !== "concluded")) {
+      toast.error("O evento precisa estar encerrado para emitir certificados");
+      return;
+    }
+
+    setIssuingAll(true);
+    try {
+      // Fetch all eligible registrations across pages
+      const allRegs = await fetchAllPages<RegistrationData>(() =>
+        supabase
+          .from("registrations")
+          .select("*")
+          .eq("event_id", selectedEventId)
+          .eq("payment_status", "approved")
+          .eq("checkin_status", "checked_in")
+          .order("full_name", { ascending: true }),
+      );
+      // Fetch existing certificates for those IDs
+      const ids = allRegs.map(r => r.id);
+      let existingCertIds = new Set<string>();
+      if (ids.length > 0) {
+        // Chunk to avoid overly long IN clauses
+        for (let i = 0; i < ids.length; i += 500) {
+          const chunk = ids.slice(i, i + 500);
+          const { data } = await supabase.from("certificates").select("registration_id").in("registration_id", chunk);
+          (data || []).forEach((c: any) => existingCertIds.add(c.registration_id));
+        }
+      }
+      const eligible = allRegs.filter(r => !existingCertIds.has(r.id));
+      if (eligible.length === 0) {
+        toast.info("Todos os certificados elegíveis já foram emitidos");
+        return;
+      }
+
+      let success = 0;
+      for (const reg of eligible) {
+        const certCode = "CERT-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+        const validationHash = crypto.randomUUID();
+        const { error } = await supabase.from("certificates").insert({
+          registration_id: reg.id,
+          certificate_code: certCode,
+          validation_hash: validationHash,
+        });
+        if (!error) {
+          await supabase.from("registrations").update({
+            certificate_status: "issued",
+            certificate_issued_at: new Date().toISOString(),
+          }).eq("id", reg.id);
+          success++;
+        }
+      }
+      toast.success(`${success} certificado(s) emitido(s)`);
+      loadData();
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao emitir certificados em lote");
+    } finally {
+      setIssuingAll(false);
     }
   }
 
@@ -151,7 +234,9 @@ export default function AdminCertificates() {
           <TabsContent value="certificates" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-xl font-bold text-foreground">Certificados</h2>
-              <Button onClick={issueAll} className="gap-2"><Award className="h-4 w-4" /> Emitir Todos Elegíveis</Button>
+              <Button onClick={issueAll} disabled={issuingAll} className="gap-2">
+                <Award className="h-4 w-4" /> {issuingAll ? "Emitindo..." : "Emitir Todos Elegíveis"}
+              </Button>
             </div>
 
             {loading ? (
@@ -214,6 +299,12 @@ export default function AdminCertificates() {
                 </Table>
               </div>
             )}
+            <AdminPagination
+              page={page}
+              pageSize={CERTS_PAGE_SIZE}
+              total={totalCount}
+              onPageChange={setPage}
+            />
           </TabsContent>
 
           <TabsContent value="template" className="mt-4">
