@@ -7,10 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle, FileDown, Loader2 } from "lucide-react";
+import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus } from "lucide-react";
 import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { generateEventReportPdf } from "@/lib/reportPdf";
+import EditRegistrationDialog from "@/components/EditRegistrationDialog";
+import { printLabels } from "@/lib/labelRenderer";
+import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 
 interface EventBasic {
   id: string;
@@ -38,6 +42,28 @@ export default function AdminRegistrations() {
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [labelTemplate, setLabelTemplate] = useState<LabelTemplate | null>(null);
+  const [editingReg, setEditingReg] = useState<RegistrationData | null>(null);
+  const [uncheckinTarget, setUncheckinTarget] = useState<RegistrationData | null>(null);
+  const [printing, setPrinting] = useState(false);
+
+  async function loadLabelTemplate() {
+    const { data } = await supabase
+      .from("label_template")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      setLabelTemplate({
+        id: (data as any).id,
+        width_mm: Number((data as any).width_mm) || 90.3,
+        height_mm: Number((data as any).height_mm) || 29,
+        elements: ((data as any).elements || []) as LabelElement[],
+        updated_at: (data as any).updated_at,
+      });
+    }
+  }
 
   async function loadEvents() {
     const { data } = await supabase
@@ -82,8 +108,74 @@ export default function AdminRegistrations() {
     setLoading(false);
   }
 
-  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => { loadEvents(); loadLabelTemplate(); }, []);
   useEffect(() => { load(); }, [selectedEventId]);
+
+  async function uncheckinRegistration(reg: RegistrationData) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("registrations").update({
+      checkin_status: "not_checked_in",
+      checkin_at: null,
+      checkin_by_user_id: null,
+    }).eq("id", reg.id);
+    if (error) { toast.error("Erro ao descredenciar"); return; }
+
+    await supabase.from("checkin_logs").delete().eq("registration_id", reg.id);
+    await supabase.from("audit_logs").insert({
+      action: "registration_uncheckin",
+      entity_type: "registration",
+      entity_id: reg.id,
+      actor_id: user?.id ?? null,
+      details: { full_name: reg.full_name, registration_code: reg.registration_code } as any,
+    });
+
+    toast.success(`${reg.full_name} descredenciado(a)`);
+    setUncheckinTarget(null);
+    setSelectedReg(null);
+    load();
+  }
+
+  async function handlePrintSingle(reg: RegistrationData) {
+    if (!labelTemplate || labelTemplate.elements.length === 0) {
+      toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
+      return;
+    }
+    setPrinting(true);
+    try {
+      await printLabels([reg as unknown as Record<string, any>], labelTemplate);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar etiqueta");
+    }
+    setPrinting(false);
+  }
+
+  async function handlePrintBatch() {
+    if (!labelTemplate || labelTemplate.elements.length === 0) {
+      toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
+      return;
+    }
+    const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
+    const eligible = usesQr ? filtered.filter(r => !!r.qr_token) : filtered;
+    const skipped = filtered.length - eligible.length;
+    if (eligible.length === 0) {
+      toast.error("Nenhum inscrito elegível (sem QR token disponível)");
+      return;
+    }
+    const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
+      (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
+    if (!window.confirm(msg)) return;
+
+    setPrinting(true);
+    try {
+      await printLabels(eligible as unknown as Record<string, any>[], labelTemplate);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar etiquetas");
+    }
+    setPrinting(false);
+  }
+
 
   async function manualCheckin(reg: RegistrationData) {
     if (reg.checkin_status === "checked_in") { toast.error("Já realizou check-in"); return; }
@@ -209,8 +301,18 @@ export default function AdminRegistrations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrintBatch}
+            disabled={printing || filtered.length === 0}
+            className="gap-2"
+          >
+            {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            Imprimir etiquetas ({filtered.length})
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -298,17 +400,28 @@ export default function AdminRegistrations() {
                     {r.checkin_status === "checked_in" ? "✓" : "—"}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  {r.payment_status === "approved" && r.checkin_status !== "checked_in" && (
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1">
+                    {r.payment_status === "approved" && r.checkin_status !== "checked_in" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => manualCheckin(r)}
+                        className="gap-1"
+                      >
+                        <CheckCircle className="h-3 w-3" /> Check-in
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={(e) => { e.stopPropagation(); manualCheckin(r); }}
+                      onClick={() => handlePrintSingle(r)}
                       className="gap-1"
+                      title="Imprimir etiqueta"
                     >
-                      <CheckCircle className="h-3 w-3" /> Check-in
+                      <Printer className="h-3 w-3" />
                     </Button>
-                  )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -326,31 +439,74 @@ export default function AdminRegistrations() {
             <DialogTitle className="font-serif text-xl">Ficha do Inscrito</DialogTitle>
           </DialogHeader>
           {selectedReg && (
-            <div className="space-y-1">
-              {fixedDetails.map(({ label, getValue }) => {
-                const val = getValue(selectedReg);
-                if (val === "—" && !["Nome completo", "E-mail", "CPF", "Código de inscrição", "Tipo", "Status pagamento", "Check-in", "Data da inscrição"].includes(label)) return null;
-                return (
-                  <div key={label} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
-                    <span className="text-sm font-medium text-muted-foreground">{label}</span>
-                    <span className="text-sm text-foreground text-right">{val}</span>
-                  </div>
-                );
-              })}
-              {customFields.map(f => {
-                const val = getFieldValue(selectedReg, f.field_key);
-                if (!val) return null;
-                return (
-                  <div key={f.field_key} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
-                    <span className="text-sm font-medium text-muted-foreground">{f.field_label}</span>
-                    <span className="text-sm text-foreground text-right">{val}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2 pb-3 border-b border-border">
+                <Button size="sm" variant="outline" onClick={() => { setEditingReg(selectedReg); }} className="gap-1.5">
+                  <Pencil className="h-3.5 w-3.5" /> Editar dados
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handlePrintSingle(selectedReg)} disabled={printing} className="gap-1.5">
+                  <Printer className="h-3.5 w-3.5" /> Imprimir etiqueta
+                </Button>
+                {selectedReg.checkin_status === "checked_in" && (
+                  <Button size="sm" variant="destructive" onClick={() => setUncheckinTarget(selectedReg)} className="gap-1.5">
+                    <UserMinus className="h-3.5 w-3.5" /> Descredenciar
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-1">
+                {fixedDetails.map(({ label, getValue }) => {
+                  const val = getValue(selectedReg);
+                  if (val === "—" && !["Nome completo", "E-mail", "CPF", "Código de inscrição", "Tipo", "Status pagamento", "Check-in", "Data da inscrição"].includes(label)) return null;
+                  return (
+                    <div key={label} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
+                      <span className="text-sm font-medium text-muted-foreground">{label}</span>
+                      <span className="text-sm text-foreground text-right">{val}</span>
+                    </div>
+                  );
+                })}
+                {customFields.map(f => {
+                  const val = getFieldValue(selectedReg, f.field_key);
+                  if (!val) return null;
+                  return (
+                    <div key={f.field_key} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
+                      <span className="text-sm font-medium text-muted-foreground">{f.field_label}</span>
+                      <span className="text-sm text-foreground text-right">{val}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
+
+      <EditRegistrationDialog
+        registration={editingReg}
+        customFields={customFields}
+        open={!!editingReg}
+        onOpenChange={(o) => { if (!o) setEditingReg(null); }}
+        onSaved={() => { load(); setSelectedReg(null); }}
+      />
+
+      <AlertDialog open={!!uncheckinTarget} onOpenChange={(o) => { if (!o) setUncheckinTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Descredenciar participante?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {uncheckinTarget && `Isso removerá o check-in de ${uncheckinTarget.full_name} e apagará os registros de credenciamento associados. Não é possível desfazer.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => uncheckinTarget && uncheckinRegistration(uncheckinTarget)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Descredenciar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
