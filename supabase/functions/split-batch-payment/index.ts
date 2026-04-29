@@ -91,7 +91,18 @@ async function generatePaymentLink(
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (res.ok) return data.checkout_url || data.url || data.link || null;
+    if (res.ok) {
+      const link = data.checkout_url || data.url || data.link || null;
+      const slug = data.slug || data.invoice_slug || null;
+      if (slug && order.id) {
+        try {
+          await supabase.from("orders").update({ invoice_slug: slug }).eq("id", order.id);
+        } catch (e) {
+          console.warn("[split] Could not persist invoice_slug:", e);
+        }
+      }
+      return link;
+    }
     console.error("[split] InfinitePay error:", data);
     return null;
   } catch (err) {
