@@ -184,12 +184,13 @@ function BuyerOnlySection({ formData, onChange, errors }: {
 }
 
 // ─── Participant form with fixed + dynamic fields ───
-function ParticipantSection({ formData, onChange, errors, customFields, title }: {
+function ParticipantSection({ formData, onChange, errors, customFields, title, isBuyer }: {
   formData: Record<string, string>;
   onChange: (data: Record<string, string>) => void;
   errors: Record<string, string>;
   customFields: EventFormField[];
   title: string;
+  isBuyer?: boolean;
 }) {
   const update = (key: string, val: string) => onChange({ ...formData, [key]: val });
 
@@ -220,17 +221,20 @@ function ParticipantSection({ formData, onChange, errors, customFields, title }:
           />
           {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
         </div>
-        {/* Fixed: E-mail (opcional) */}
+        {/* Fixed: E-mail (obrigatório para o responsável; opcional para os demais) */}
         <div>
-          <Label>E-mail</Label>
+          <Label>E-mail {isBuyer ? "*" : ""}</Label>
           <Input
             type="email"
             value={formData.email || ""}
             onChange={e => update("email", e.target.value)}
-            placeholder="seu@email.com (opcional)"
+            placeholder={isBuyer ? "seu@email.com" : "seu@email.com (opcional)"}
             className={errors.email ? "border-destructive" : ""}
           />
           {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+          {isBuyer && (
+            <p className="mt-1 text-xs text-muted-foreground">Necessário para emitir o link de pagamento.</p>
+          )}
         </div>
         {/* Dynamic fields */}
         {customFields.map(field => (
@@ -248,12 +252,17 @@ function ParticipantSection({ formData, onChange, errors, customFields, title }:
 }
 
 // ─── Validation ───
-function validateForm(data: Record<string, string>, customFields: EventFormField[]): Record<string, string> {
+function validateForm(data: Record<string, string>, customFields: EventFormField[], opts?: { requireEmail?: boolean }): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!data.full_name?.trim()) errors.full_name = "Nome obrigatório";
   if (!data.cpf?.trim()) errors.cpf = "CPF obrigatório";
   else if (!isValidCPF(data.cpf)) errors.cpf = "CPF inválido";
-  if (data.email?.trim() && !isValidEmail(data.email)) errors.email = "E-mail inválido";
+  if (opts?.requireEmail) {
+    if (!data.email?.trim()) errors.email = "E-mail obrigatório para o responsável";
+    else if (!isValidEmail(data.email)) errors.email = "E-mail inválido";
+  } else if (data.email?.trim() && !isValidEmail(data.email)) {
+    errors.email = "E-mail inválido";
+  }
 
   for (const field of customFields) {
     if (!field.is_required) continue;
@@ -276,6 +285,8 @@ function validateBuyerOnly(data: Record<string, string>): Record<string, string>
   else if (!isValidCPF(data.cpf)) errors.cpf = "CPF inválido";
   if (!data.phone?.trim()) errors.phone = "WhatsApp obrigatório";
   else if (!isValidPhone(data.phone)) errors.phone = "Telefone inválido";
+  if (!data.email?.trim()) errors.email = "E-mail obrigatório para o responsável";
+  else if (!isValidEmail(data.email)) errors.email = "E-mail inválido";
   return errors;
 }
 
