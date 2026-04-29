@@ -1,89 +1,87 @@
-# Corrigir filtros dinâmicos na aba Inscritos
+## Problem
 
-## Problema
+In "Consultar minhas inscrições" → click **Pagar** on an unpaid registration, the user is taken back to the registration form ("preencher os dados novamente") instead of the InfinitePay checkout link.
 
-Na aba **Inscritos**, ao aplicar um filtro dinâmico (ex.: "Área = Área 6"):
+## Root cause (confirmed)
 
-- O total mostrado no topo (**306 resultados**) e a paginação (**Página 1 de 7**) consideram **todos** os inscritos, ignorando o filtro.
-- A tabela exibe apenas os da Área 6 **dentro da página atual** de 50 — então sobram poucas linhas em cada página, e o usuário precisa pular de página em página para encontrar os 12 da Área 6 espalhados em 306 registros.
-- O botão **"Imprimir etiquetas (306)"** também ignora o filtro dinâmico ao calcular a contagem (embora a impressão em si até filtre, a UX está enganosa).
+This is the same underlying bug as the previous report. The Edge Function logs for `create-checkout` show InfinitePay returning **HTTP 422**:
 
-### Causa raiz
-
-Em `src/pages/admin/AdminRegistrations.tsx`:
-
-- A query ao Supabase aplica server-side apenas: evento, status, etiqueta, material e busca textual.
-- Os filtros dinâmicos (`dynamicFilters` — campos como Área, Congregação, Função, etc.) são aplicados **somente no client**, sobre a página já carregada (linha 336: `applyDynamicFilters(registrations, dynamicFilters)`).
-- Logo, `totalCount` (que vem do `count: "exact"` da query) reflete o total **sem** os filtros dinâmicos.
-
-## Solução
-
-Aplicar os filtros dinâmicos **também no servidor**, usando a sintaxe PostgREST para JSONB e colunas conhecidas. Assim:
-
-- `totalCount` passa a refletir o total **realmente filtrado**.
-- A paginação passa a navegar somente entre os registros que casam com o filtro.
-- O badge "306 resultados" e "Imprimir etiquetas (306)" mostram o número correto (ex.: "12 resultados", "Imprimir etiquetas (12)").
-
-### Mudanças
-
-**1. Nova helper `applyDynamicFiltersToQuery(query, filters)`** em `src/components/DynamicFieldFilters.tsx` (ou novo arquivo `src/lib/dynamicFilterQuery.ts`):
-
-- Para cada filtro ativo, decide se o campo é uma **coluna conhecida** (`area`, `congregation`, `church_role`, `church_function`, `phone`, `birth_date`, `email`, `cpf`, `full_name`) ou **custom_field JSONB**.
-- Coluna conhecida + lista de valores (multi-select): `query.in(coluna, values)`.
-- Coluna conhecida + texto livre: `query.ilike(coluna, '%valor%')`.
-- Custom field + lista de valores: `query.in('custom_fields->>field_key', values)`.
-- Custom field + texto livre: `query.ilike('custom_fields->>field_key', '%valor%')`.
-- Reaproveita o mesmo mapa `KNOWN_FIELD_MAP` que já existe para manter consistência com `getFieldValue`.
-
-**2. Em `AdminRegistrations.tsx`:**
-
-- `buildRegistrationsQuery()` passa a chamar `applyDynamicFiltersToQuery(q, dynamicFilters)` antes do `return`.
-- A função `fetchAllPages` usada em `handlePrintBatch` e `handleDownloadReport` passa a usar a mesma query (incluindo dynamicFilters server-side) — assim **removemos** a chamada redundante a `applyDynamicFilters(all, dynamicFilters)` no client (mas mantemos como camada de segurança caso algum filtro complexo no futuro só funcione no client).
-- Adicionar `dynamicFilters` ao array de dependências do `useEffect` que dispara `load()` e ao `useEffect` que reseta `setPage(1)`.
-- A linha 336 (`const filtered = applyDynamicFilters(...)`) pode ser removida ou virar `const filtered = registrations;` — o servidor já filtra. (Mantenho `applyDynamicFilters` no client como no-op defensivo, pois a função é idempotente quando os dados já vêm filtrados.)
-- O badge "X resultados" e "Imprimir etiquetas (X)" continuam usando `totalCount`, que agora estará correto.
-
-**3. Cuidados:**
-
-- Multi-select: o componente já guarda `values: string[]`. Usar `.in()` server-side requer values exatos (case-sensitive). O `getFieldValue` atual faz `toLowerCase()` no client. Para manter o comportamento, usar `.in()` com os valores originais (as opções vêm do próprio cadastro do evento, então o casing bate). Para campos free-text, usar `.ilike()` que é case-insensitive.
-- Não quebrar nenhum dos filtros já existentes (evento, status, etiqueta, material, busca, paginação, impressão em lote, materiais entregues, marcação automática de impressão).
-- Não alterar o schema do banco — apenas mudanças no client.
-
-## Detalhes técnicos
-
-```ts
-// src/lib/dynamicFilterQuery.ts (novo)
-import { KNOWN_FIELD_MAP } from "@/components/DynamicFieldFilters";
-import type { ActiveFilter } from "@/components/DynamicFieldFilters";
-
-export function applyDynamicFiltersToQuery(query: any, filters: ActiveFilter[]) {
-  for (const f of filters) {
-    const column = KNOWN_FIELD_MAP[f.fieldKey]; // string | undefined
-    const path = column ?? `custom_fields->>${f.fieldKey}`;
-    if (f.values && f.values.length > 0) {
-      query = query.in(path, f.values);
-    } else if (f.value) {
-      query = query.ilike(path, `%${f.value.replace(/[%,]/g, "")}%`);
-    }
-  }
-  return query;
-}
+```
+"customer":{"email":["must be filled"]}
 ```
 
-(Exportar `KNOWN_FIELD_MAP` de `DynamicFieldFilters.tsx`.)
+with payload `"customer":{"name":"MARINHO ...","email":""}`.
 
-## Arquivos afetados
+Sequence:
 
-- `src/components/DynamicFieldFilters.tsx` — exportar `KNOWN_FIELD_MAP`.
-- `src/lib/dynamicFilterQuery.ts` — novo helper.
-- `src/pages/admin/AdminRegistrations.tsx` — aplicar helper em `buildRegistrationsQuery`, no `fetchAllPages` da impressão em lote e do relatório PDF; adicionar `dynamicFilters` aos useEffect de reset/load.
+1. The participant form has e-mail as **optional** (`RegistrationPage.tsx` ~line 218: `placeholder="seu@email.com (opcional)"`).
+2. User submits without an e-mail → `create-checkout` calls InfinitePay with empty `customer.email` → InfinitePay rejects with 422 → `generatePaymentLink` returns `null` → the order row is created with `payment_link = NULL`.
+3. Later, in `EventsListPage.tsx` (lines 540-545), the "Pagar" button does:
+   ```ts
+   if (order.payment_link) window.location.href = order.payment_link;
+   else navigate(`/evento/${slug}/inscricao`);  // ← falls back to the form
+   ```
+   Since `payment_link` is `NULL`, it sends the user back to the form. That's the symptom the user is seeing.
 
-## Resultado esperado
+So the visible bug ("leva para preencher os dados de novo") is caused by the *missing* payment link, not by the "Pagar" button being wrong.
 
-Filtrando por "Área = Área 6":
+## Fix (two layers — preventive + recovery)
 
-- Topo mostra **"12 resultados"** (apenas os da Área 6).
-- Botão **"Imprimir etiquetas (12)"**.
-- Paginação aparece só se passar de 50 (provavelmente fica em uma página só).
-- Tabela lista exclusivamente os 12 inscritos da Área 6.
-- Impressão em lote gera as 12 etiquetas exatamente.
+### 1. Make buyer e-mail required (preventive) — same as previous fix
+
+`src/pages/RegistrationPage.tsx`:
+
+- **Individual flow**: require + validate `email` (treat the participant as the buyer).
+- **Batch flow, buyer is participant**: require + validate `email` on the buyer.
+- **Batch flow, buyer is NOT participant** (`BuyerOnlySection`): add an **E-mail** input and require + validate it.
+- Keep `email` optional for non-buyer batch participants (current behavior).
+- Update labels: drop "(opcional)" when the field belongs to the buyer.
+
+`supabase/functions/create-checkout/index.ts`:
+
+- After computing `buyer_email`, if it is empty or invalid, return **HTTP 400** with `"E-mail do responsável é obrigatório para o pagamento."` instead of letting the InfinitePay request fail silently with 422.
+
+### 2. Regenerate the payment link on demand (recovery) — fixes existing broken orders
+
+This is essential because there are already orders in the DB with `payment_link = NULL` from previous failed attempts. We must NOT send those users back to the form.
+
+`supabase/functions/create-checkout/index.ts` — extend the existing **resume path** (currently only triggers when re-submitting the form for the same single CPF) so it can also be invoked by a "regenerate link" call. Concretely, accept an alternative payload shape:
+
+```json
+{ "regenerate_for_order_id": "<uuid>" }
+```
+
+When this is provided:
+- Look up the order, its event, and its registrations.
+- Reject if `payment_status !== "pending"`.
+- If `payment_link` exists, return it.
+- Otherwise call `generatePaymentLink(...)` exactly like the normal flow, persist `payment_link` on the order, and return `{ order_code, payment_link }`.
+- If the buyer e-mail on the existing order is empty/invalid (legacy data), return 400 with a clear message asking the user to update via support — InfinitePay still won't accept an empty email even on retry.
+
+`src/pages/EventsListPage.tsx` (the "Pagar" button, ~lines 483-545):
+
+Replace the current "if no link → navigate to form" fallback with:
+
+```text
+if order.payment_link → redirect to it
+else
+  call create-checkout with { regenerate_for_order_id: r.order_id }
+  if it returns a payment_link → redirect
+  else → toast the returned error message (do NOT bounce to the form)
+```
+
+For the **batch** branch, behavior stays the same (the split-batch-payment flow already regenerates its own per-participant link). Only the **individual** branch (line 540-545) changes.
+
+### 3. No DB / RLS / migration changes
+
+Pure code-level fix. `payment_link` is already nullable on `orders`.
+
+## What stays the same (no regressions)
+
+- Order code, registration code, NSU, audit logs, webhook, reconcile poller, OrderStatusPage polling, batch split flow, CPF uniqueness, pending-resume on re-submit, "Aguardando pagamento" page, all admin tabs (Inscritos filter + material delivered toggle), label printing, dynamic filters — all untouched.
+
+## Files to modify
+
+- `src/pages/RegistrationPage.tsx` — make buyer e-mail required (individual + batch buyer + buyer-only section); add e-mail input to `BuyerOnlySection`.
+- `supabase/functions/create-checkout/index.ts` — server-side guard for empty/invalid buyer e-mail; new `regenerate_for_order_id` branch that re-creates the InfinitePay link for an existing pending order.
+- `src/pages/EventsListPage.tsx` — in the individual "Pagar" button, when `payment_link` is missing, call `create-checkout` with `regenerate_for_order_id` and redirect to the returned link (instead of sending the user back to the form).
