@@ -722,6 +722,57 @@ export default function AdminRegistrations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Print batch dialog: choose between only-new vs reprint-all */}
+      <Dialog open={!!printDialog} onOpenChange={(o) => { if (!o) setPrintDialog(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">Imprimir etiquetas</DialogTitle>
+          </DialogHeader>
+          {printDialog && (
+            <div className="space-y-4">
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Novos (não impressos):</span>
+                  <span className="font-semibold text-foreground">{printDialog.novos.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Já impressos antes:</span>
+                  <span className="font-semibold text-foreground">{printDialog.jaImpressos.length}</span>
+                </div>
+                {printDialog.semQr > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Pulados (sem QR):</span>
+                    <span className="font-semibold text-foreground">{printDialog.semQr}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={() => executePrint(printDialog.novos)}
+                  disabled={printing || printDialog.novos.length === 0}
+                  className="gap-2"
+                >
+                  {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  Imprimir só os novos ({printDialog.novos.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => executePrint([...printDialog.novos, ...printDialog.jaImpressos])}
+                  disabled={printing}
+                  className="gap-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  Reimprimir todos ({printDialog.novos.length + printDialog.jaImpressos.length})
+                </Button>
+                <Button variant="ghost" onClick={() => setPrintDialog(null)} disabled={printing}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
