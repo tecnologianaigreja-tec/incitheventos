@@ -551,6 +551,14 @@ export default function EventsListPage() {
                                     <CreditCard className="h-3 w-3" /> Pagar
                                   </Button>
                                 )}
+                                {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
+                                  <PaymentProofUpload
+                                    orderId={r.order_id}
+                                    cpf={r.cpf}
+                                    orderCode={r.registration_code}
+                                    onSubmitted={handleCpfLookup}
+                                  />
+                                )}
                               </div>
                             </CardContent>
                           </Card>
