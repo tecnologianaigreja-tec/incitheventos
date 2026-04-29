@@ -255,7 +255,7 @@ export default function AdminRegistrations() {
       return;
     }
 
-    if (filtered.length === 0) {
+    if (totalCount === 0) {
       toast.error("Nenhum inscrito para gerar relatório");
       return;
     }
@@ -263,6 +263,24 @@ export default function AdminRegistrations() {
     setGeneratingReport(true);
 
     try {
+      // Fetch all matching registrations across pages
+      const all = await fetchAllPages<RegistrationData>(() => {
+        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
+        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
+        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+        if (debouncedSearch) {
+          const escaped = debouncedSearch.replace(/[%,]/g, "");
+          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
+        }
+        return q;
+      });
+      const allFiltered = applyDynamicFilters(all, dynamicFilters);
+
+      if (allFiltered.length === 0) {
+        toast.error("Nenhum inscrito para gerar relatório");
+        return;
+      }
+
       // Build filter description
       const filterParts: string[] = [];
       if (search) filterParts.push(`Busca: "${search}"`);
@@ -297,7 +315,7 @@ export default function AdminRegistrations() {
 
       const doc = generateEventReportPdf({
         event: eventInfo,
-        registrations: filtered,
+        registrations: allFiltered,
         filterDescription: filterParts.length > 0 ? filterParts.join(" | ") : null,
       });
 
