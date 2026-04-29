@@ -238,7 +238,7 @@ export default function AdminCheckin() {
               <Users className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{checkedIn.length}</p>
+              <p className="text-2xl font-bold text-foreground">{totalCount}</p>
               <p className="text-xs text-muted-foreground">Total presentes</p>
             </div>
           </CardContent>
