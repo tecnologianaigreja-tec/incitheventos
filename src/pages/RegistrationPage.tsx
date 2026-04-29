@@ -221,20 +221,17 @@ function ParticipantSection({ formData, onChange, errors, customFields, title, i
           />
           {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
         </div>
-        {/* Fixed: E-mail (obrigatório para o responsável; opcional para os demais) */}
+        {/* Fixed: E-mail (opcional — InfinitePay coleta no checkout se vazio) */}
         <div>
-          <Label>E-mail {isBuyer ? "*" : ""}</Label>
+          <Label>E-mail</Label>
           <Input
             type="email"
             value={formData.email || ""}
             onChange={e => update("email", e.target.value)}
-            placeholder={isBuyer ? "seu@email.com" : "seu@email.com (opcional)"}
+            placeholder="seu@email.com (opcional)"
             className={errors.email ? "border-destructive" : ""}
           />
           {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
-          {isBuyer && (
-            <p className="mt-1 text-xs text-muted-foreground">Necessário para emitir o link de pagamento.</p>
-          )}
         </div>
         {/* Dynamic fields */}
         {customFields.map(field => (
