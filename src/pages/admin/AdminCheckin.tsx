@@ -223,22 +223,8 @@ export default function AdminCheckin() {
 
   useEffect(() => { return () => { stopScanner(); }; }, []);
 
-  // Filter checked-in list
-  const filteredCheckedIn = applyDynamicFilters(
-    checkedIn.filter(r => {
-      if (!searchCheckedIn) return true;
-      return r.full_name.toLowerCase().includes(searchCheckedIn.toLowerCase()) ||
-        r.email.toLowerCase().includes(searchCheckedIn.toLowerCase());
-    }),
-    dynamicFilters
-  );
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredCheckedIn.length / PAGE_SIZE));
-  const paged = filteredCheckedIn.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [dynamicFilters, searchCheckedIn]);
+  // Dynamic filters apply over the current page only (visual only — informative for admins)
+  const filteredCheckedIn = applyDynamicFilters(checkedIn, dynamicFilters);
 
   return (
     <div className="space-y-6">
