@@ -5,7 +5,8 @@ import { formatCentsToBRL } from "@/lib/constants";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
