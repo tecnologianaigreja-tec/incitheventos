@@ -435,6 +435,8 @@ export default function AdminRegistrations() {
     { label: "Tipo", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
     { label: "Status pagamento", getValue: r => r.payment_status === "approved" ? "Pago" : r.payment_status === "pending" ? "Pendente" : r.payment_status },
     { label: "Check-in", getValue: r => r.checkin_status === "checked_in" ? `Sim — ${r.checkin_at ? new Date(r.checkin_at).toLocaleString("pt-BR") : ""}` : "Não" },
+    { label: "Etiqueta impressa", getValue: r => r.label_printed_at ? `Sim — ${new Date(r.label_printed_at).toLocaleString("pt-BR")}${r.label_print_count > 1 ? ` (${r.label_print_count}x)` : ""}` : "Não" },
+    { label: "Material entregue", getValue: r => r.material_delivered_at ? `Sim — ${new Date(r.material_delivered_at).toLocaleString("pt-BR")}` : "Não" },
     { label: "Data da inscrição", getValue: r => new Date(r.created_at).toLocaleString("pt-BR") },
   ];
 
