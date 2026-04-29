@@ -73,14 +73,8 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Need a valid buyer email to call InfinitePay
+      // E-mail é opcional — InfinitePay coleta do cliente no próprio checkout se vazio
       const buyerEmail = (existingOrder.buyer_email || "").trim();
-      if (!buyerEmail || !isValidEmail(buyerEmail)) {
-        return new Response(
-          JSON.stringify({ error: "E-mail do responsável ausente ou inválido neste pedido. Refaça a inscrição informando um e-mail válido." }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
 
       const { data: ev } = await supabase.from("events").select("*").eq("id", existingOrder.event_id).maybeSingle();
       if (!ev) {
