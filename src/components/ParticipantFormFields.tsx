@@ -89,7 +89,7 @@ export default function ParticipantFormFields({ value, onChange, index, label, e
           {errors.cpf && <p className="mt-1 text-xs text-destructive">{errors.cpf}</p>}
         </div>
         <div>
-          <Label htmlFor={`${prefix}email`}>E-mail *</Label>
+          <Label htmlFor={`${prefix}email`}>E-mail</Label>
           <Input
             id={`${prefix}email`}
             type="email"
