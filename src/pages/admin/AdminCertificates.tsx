@@ -24,6 +24,12 @@ export default function AdminCertificates() {
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [issuingAll, setIssuingAll] = useState(false);
+
+  // Reset page when event changes
+  useEffect(() => { setPage(1); }, [selectedEventId]);
 
   async function loadEvents() {
     const { data } = await supabase.from("events").select("id, title, status, start_date, end_date, workload_hours");
@@ -36,12 +42,30 @@ export default function AdminCertificates() {
   async function loadData() {
     if (!selectedEventId) { setLoading(false); return; }
     setLoading(true);
-    const [regsRes, certsRes] = await Promise.all([
-      supabase.from("registrations").select("*").eq("event_id", selectedEventId).eq("payment_status", "approved").eq("checkin_status", "checked_in"),
-      supabase.from("certificates").select("*"),
-    ]);
-    setRegistrations((regsRes.data || []) as unknown as RegistrationData[]);
-    setCertificates(certsRes.data || []);
+    const from = (page - 1) * CERTS_PAGE_SIZE;
+    const to = from + CERTS_PAGE_SIZE - 1;
+
+    const regsRes = await supabase
+      .from("registrations")
+      .select("*", { count: "exact" })
+      .eq("event_id", selectedEventId)
+      .eq("payment_status", "approved")
+      .eq("checkin_status", "checked_in")
+      .order("full_name", { ascending: true })
+      .range(from, to);
+
+    const regs = (regsRes.data || []) as unknown as RegistrationData[];
+    setRegistrations(regs);
+    setTotalCount(regsRes.count || 0);
+
+    // Load only certificates for visible registrations
+    if (regs.length > 0) {
+      const ids = regs.map(r => r.id);
+      const certsRes = await supabase.from("certificates").select("*").in("registration_id", ids);
+      setCertificates(certsRes.data || []);
+    } else {
+      setCertificates([]);
+    }
     setLoading(false);
   }
 
