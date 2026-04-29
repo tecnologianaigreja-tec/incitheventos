@@ -112,6 +112,11 @@ export interface RegistrationData {
   checkin_by_user_id: string | null;
   certificate_status: "unavailable" | "available" | "issued";
   certificate_issued_at: string | null;
+  label_printed_at: string | null;
+  label_printed_by: string | null;
+  label_print_count: number;
+  material_delivered_at: string | null;
+  material_delivered_by: string | null;
   created_at: string;
   updated_at: string;
 }
