@@ -20,6 +20,7 @@ import AdminCheckin from "./pages/admin/AdminCheckin";
 import AdminCertificates from "./pages/admin/AdminCertificates";
 import AdminExport from "./pages/admin/AdminExport";
 import AdminSiteSettings from "./pages/admin/AdminSiteSettings";
+import AdminLabelEditor from "./pages/admin/AdminLabelEditor";
 import NotFound from "./pages/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="certificados" element={<AdminCertificates />} />
             <Route path="exportacao" element={<AdminExport />} />
             <Route path="configuracoes" element={<AdminSiteSettings />} />
+            <Route path="etiquetas" element={<AdminLabelEditor />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { LayoutDashboard, Calendar, ShoppingCart, Users, QrCode, Award, Download, Settings, LogOut, Menu, X, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Calendar, ShoppingCart, Users, QrCode, Award, Download, Settings, LogOut, Menu, X, ChevronRight, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const navItems = [
   { label: "Check-in", path: "/admin/checkin", icon: QrCode },
   { label: "Certificados", path: "/admin/certificados", icon: Award },
   { label: "Exportação", path: "/admin/exportacao", icon: Download },
+  { label: "Etiquetas", path: "/admin/etiquetas", icon: Tag },
   { label: "Configurações", path: "/admin/configuracoes", icon: Settings },
 ];
 
