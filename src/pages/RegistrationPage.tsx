@@ -543,6 +543,7 @@ export default function RegistrationPage() {
               errors={individualErrors}
               customFields={customFields}
               title="Seus Dados"
+              isBuyer
             />
             <div className="space-y-3">
               <div className="flex items-start gap-3">
