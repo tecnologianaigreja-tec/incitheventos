@@ -477,7 +477,7 @@ export default function AdminRegistrations() {
               </TableRow>
             ))}
             {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Nenhum inscrito encontrado</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{totalCount === 0 ? "Nenhum inscrito encontrado" : "Nenhum resultado nos filtros aplicados"}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
