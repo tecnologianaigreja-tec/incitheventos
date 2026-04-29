@@ -527,6 +527,8 @@ export default function AdminRegistrations() {
               <TableHead>Tipo</TableHead>
               <TableHead>Pagamento</TableHead>
               <TableHead>Check-in</TableHead>
+              <TableHead className="text-center">Etiqueta</TableHead>
+              <TableHead className="text-center">Material</TableHead>
               <TableHead>Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -557,6 +559,39 @@ export default function AdminRegistrations() {
                     {r.checkin_status === "checked_in" ? "✓" : "—"}
                   </Badge>
                 </TableCell>
+                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                  {r.label_printed_at ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="default" className="gap-1 cursor-help">
+                            <Tag className="h-3 w-3" /> Impressa
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {new Date(r.label_printed_at).toLocaleString("pt-BR")}
+                          {r.label_print_count > 1 && ` (${r.label_print_count}x)`}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span className="text-muted-foreground text-sm">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-center gap-2">
+                    <Checkbox
+                      checked={!!r.material_delivered_at}
+                      onCheckedChange={(v) => toggleMaterial(r, !!v)}
+                      aria-label="Material entregue"
+                    />
+                    {r.material_delivered_at && (
+                      <Badge variant="default" className="gap-1">
+                        <Package className="h-3 w-3" /> Entregue
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     {r.payment_status === "approved" && r.checkin_status !== "checked_in" && (
@@ -583,7 +618,7 @@ export default function AdminRegistrations() {
               </TableRow>
             ))}
             {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{totalCount === 0 ? "Nenhum inscrito encontrado" : "Nenhum resultado nos filtros aplicados"}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">{totalCount === 0 ? "Nenhum inscrito encontrado" : "Nenhum resultado nos filtros aplicados"}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
