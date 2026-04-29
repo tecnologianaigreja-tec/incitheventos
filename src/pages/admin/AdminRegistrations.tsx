@@ -353,7 +353,7 @@ export default function AdminRegistrations() {
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
         <div className="flex items-center gap-3 flex-wrap">
-          <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+          <Badge variant="outline" className="text-sm">{totalCount} resultado{totalCount !== 1 ? "s" : ""}</Badge>
           <Button
             variant="outline"
             size="sm"
