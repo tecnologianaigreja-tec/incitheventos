@@ -46,6 +46,8 @@ export default function AdminRegistrations() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [labelFilter, setLabelFilter] = useState<"all" | "unprinted" | "printed">("all");
+  const [materialFilter, setMaterialFilter] = useState<"all" | "pending" | "delivered">("all");
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -55,6 +57,11 @@ export default function AdminRegistrations() {
   const [printing, setPrinting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [printDialog, setPrintDialog] = useState<null | {
+    novos: RegistrationData[];
+    jaImpressos: RegistrationData[];
+    semQr: number;
+  }>(null);
 
   // Debounce search
   useEffect(() => {
@@ -63,7 +70,7 @@ export default function AdminRegistrations() {
   }, [search]);
 
   // Reset page when filters change
-  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, selectedEventId]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, selectedEventId, labelFilter, materialFilter]);
 
   async function loadLabelTemplate() {
     const { data } = await supabase
