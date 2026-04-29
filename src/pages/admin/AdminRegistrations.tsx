@@ -19,7 +19,6 @@ import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 import AdminPagination from "@/components/admin/AdminPagination";
 import { fetchAllPages } from "@/lib/fetchAllPages";
-import { applyDynamicFiltersToQuery } from "@/lib/dynamicFilterQuery";
 
 const REG_PAGE_SIZE = 50;
 
@@ -99,8 +98,7 @@ export default function AdminRegistrations() {
     if (data) setEvents(data as EventBasic[]);
   }
 
-  function buildRegistrationsQuery() {
-    let q: any = supabase.from("registrations").select("*", { count: "exact" }).order("created_at", { ascending: false });
+  function applyBaseFilters(q: any) {
     if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
     if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
     if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
@@ -113,8 +111,47 @@ export default function AdminRegistrations() {
         `full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`,
       );
     }
-    q = applyDynamicFiltersToQuery(q, dynamicFilters);
     return q;
+  }
+
+  function buildRegistrationsQuery() {
+    return applyBaseFilters(
+      supabase.from("registrations").select("*", { count: "exact" }).order("created_at", { ascending: false })
+    );
+  }
+
+  function buildRegistrationsListQuery() {
+    return applyBaseFilters(
+      supabase.from("registrations").select("*").order("created_at", { ascending: false })
+    );
+  }
+
+  async function loadCustomFields() {
+    let fieldsQuery: any = supabase
+      .from("event_form_fields")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (selectedEventId !== "all") {
+      fieldsQuery = fieldsQuery.eq("event_id", selectedEventId);
+    }
+
+    const { data: fields } = await fieldsQuery;
+    if (!fields) {
+      setCustomFields([]);
+      return;
+    }
+
+    const seen = new Set<string>();
+    const unique: EventFormField[] = [];
+    for (const f of fields as unknown as EventFormField[]) {
+      if (!seen.has(f.field_key)) {
+        seen.add(f.field_key);
+        unique.push(f);
+      }
+    }
+    setCustomFields(unique);
   }
 
   async function load() {
@@ -122,33 +159,20 @@ export default function AdminRegistrations() {
     const from = (page - 1) * REG_PAGE_SIZE;
     const to = from + REG_PAGE_SIZE - 1;
 
-    const { data, count } = await buildRegistrationsQuery().range(from, to);
-    const regs = (data || []) as unknown as RegistrationData[];
-    setRegistrations(regs);
-    setTotalCount(count || 0);
+    await loadCustomFields();
 
-    if (regs.length > 0) {
-      const eventIds = [...new Set(regs.map(r => r.event_id))];
-      const { data: fields } = await supabase
-        .from("event_form_fields")
-        .select("*")
-        .in("event_id", eventIds)
-        .eq("is_active", true)
-        .order("sort_order");
-      if (fields) {
-        const seen = new Set<string>();
-        const unique: EventFormField[] = [];
-        for (const f of fields as unknown as EventFormField[]) {
-          if (!seen.has(f.field_key)) {
-            seen.add(f.field_key);
-            unique.push(f);
-          }
-        }
-        setCustomFields(unique);
-      }
+    if (dynamicFilters.length > 0) {
+      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
+      const fullyFiltered = applyDynamicFilters(all, dynamicFilters);
+      setTotalCount(fullyFiltered.length);
+      setRegistrations(fullyFiltered.slice(from, to + 1));
     } else {
-      setCustomFields([]);
+      const { data, count } = await buildRegistrationsQuery().range(from, to);
+      const regs = (data || []) as unknown as RegistrationData[];
+      setRegistrations(regs);
+      setTotalCount(count || 0);
     }
+
     setLoading(false);
   }
 
@@ -229,21 +253,7 @@ export default function AdminRegistrations() {
     setPrinting(true);
     try {
       // Fetch all matching registrations across pages (server-side filters preserved)
-      const all = await fetchAllPages<RegistrationData>(() => {
-        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
-        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
-        if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
-        if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
-        if (materialFilter === "pending") q = q.is("material_delivered_at", null);
-        if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
-        if (debouncedSearch) {
-          const escaped = debouncedSearch.replace(/[%,]/g, "");
-          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
-        }
-        q = applyDynamicFiltersToQuery(q, dynamicFilters);
-        return q;
-      });
+      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
       // Defensive client-side pass (no-op when server already filtered).
       const allFiltered = applyDynamicFilters(all, dynamicFilters);
       const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
@@ -358,21 +368,7 @@ export default function AdminRegistrations() {
 
     try {
       // Fetch all matching registrations across pages
-      const all = await fetchAllPages<RegistrationData>(() => {
-        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
-        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
-        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
-        if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
-        if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
-        if (materialFilter === "pending") q = q.is("material_delivered_at", null);
-        if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
-        if (debouncedSearch) {
-          const escaped = debouncedSearch.replace(/[%,]/g, "");
-          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
-        }
-        q = applyDynamicFiltersToQuery(q, dynamicFilters);
-        return q;
-      });
+      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
       const allFiltered = applyDynamicFilters(all, dynamicFilters);
 
       if (allFiltered.length === 0) {

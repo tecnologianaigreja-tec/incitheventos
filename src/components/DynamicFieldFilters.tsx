@@ -31,12 +31,58 @@ export const KNOWN_FIELD_MAP: Record<string, keyof RegistrationData> = {
   church_function: "church_function", cargo_igreja: "church_function",
 };
 
+function normalizeKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function resolveKnownField(fieldKey: string): keyof RegistrationData | undefined {
+  const normalized = normalizeKey(fieldKey);
+
+  if (KNOWN_FIELD_MAP[fieldKey]) return KNOWN_FIELD_MAP[fieldKey];
+
+  if (normalized.includes("area")) return "area";
+  if (normalized.includes("congreg")) return "congregation";
+  if (normalized.includes("depart") || normalized.includes("cargo") || normalized.includes("ministerio")) return "church_role";
+  if (normalized.includes("funcao") || normalized.includes("funcoministerial") || normalized.includes("funcaoministerial")) return "church_function";
+  if (normalized.includes("telefone") || normalized.includes("whatsapp") || normalized.includes("celular")) return "phone";
+  if (normalized.includes("datanascimento") || normalized.includes("birthdate")) return "birth_date";
+
+  return undefined;
+}
+
+function findInCustomFields(customFields: Record<string, any>, fieldKey: string): string {
+  if (customFields[fieldKey] != null && customFields[fieldKey] !== "") {
+    return String(customFields[fieldKey]);
+  }
+
+  const normalizedTarget = normalizeKey(fieldKey);
+
+  for (const [key, value] of Object.entries(customFields)) {
+    if (value == null || value === "") continue;
+    const normalizedKey = normalizeKey(key);
+    if (normalizedKey === normalizedTarget || normalizedKey.includes(normalizedTarget) || normalizedTarget.includes(normalizedKey)) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
 export function getFieldValue(reg: RegistrationData, fieldKey: string): string {
-  if (KNOWN_FIELD_MAP[fieldKey]) return (reg[KNOWN_FIELD_MAP[fieldKey]] as string) || "";
+  const knownField = resolveKnownField(fieldKey);
+  if (knownField) {
+    const directValue = (reg[knownField] as string) || "";
+    if (directValue) return directValue;
+  }
   // Check direct property first, then custom_fields JSONB
   if ((reg as any)[fieldKey]) return (reg as any)[fieldKey];
-  const cf = (reg as any).custom_fields;
-  if (cf && typeof cf === "object" && cf[fieldKey]) return cf[fieldKey];
+  const cf = ((reg as any).custom_fields && typeof (reg as any).custom_fields === "object") ? (reg as any).custom_fields : {};
+  const customValue = findInCustomFields(cf, fieldKey);
+  if (customValue) return customValue;
   return "";
 }
 
