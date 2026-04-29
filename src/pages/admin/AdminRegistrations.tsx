@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus } from "lucide-react";
+import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus, Tag, Package, RotateCcw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { generateEventReportPdf } from "@/lib/reportPdf";
 import EditRegistrationDialog from "@/components/EditRegistrationDialog";
@@ -44,6 +46,8 @@ export default function AdminRegistrations() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [labelFilter, setLabelFilter] = useState<"all" | "unprinted" | "printed">("all");
+  const [materialFilter, setMaterialFilter] = useState<"all" | "pending" | "delivered">("all");
   const [selectedReg, setSelectedReg] = useState<RegistrationData | null>(null);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -53,6 +57,11 @@ export default function AdminRegistrations() {
   const [printing, setPrinting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [printDialog, setPrintDialog] = useState<null | {
+    novos: RegistrationData[];
+    jaImpressos: RegistrationData[];
+    semQr: number;
+  }>(null);
 
   // Debounce search
   useEffect(() => {
@@ -61,7 +70,7 @@ export default function AdminRegistrations() {
   }, [search]);
 
   // Reset page when filters change
-  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, selectedEventId]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter, selectedEventId, labelFilter, materialFilter]);
 
   async function loadLabelTemplate() {
     const { data } = await supabase
@@ -93,6 +102,10 @@ export default function AdminRegistrations() {
     let q: any = supabase.from("registrations").select("*", { count: "exact" }).order("created_at", { ascending: false });
     if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
     if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+    if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
+    if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
+    if (materialFilter === "pending") q = q.is("material_delivered_at", null);
+    if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
     if (debouncedSearch) {
       const escaped = debouncedSearch.replace(/[%,]/g, "");
       q = q.or(
@@ -138,7 +151,7 @@ export default function AdminRegistrations() {
   }
 
   useEffect(() => { loadEvents(); loadLabelTemplate(); }, []);
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch, statusFilter]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch, statusFilter, labelFilter, materialFilter]);
 
   async function uncheckinRegistration(reg: RegistrationData) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -164,14 +177,41 @@ export default function AdminRegistrations() {
     load();
   }
 
+  async function markPrintedRpc(ids: string[]) {
+    if (ids.length === 0) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const chunkSize = 200;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { error } = await (supabase as any).rpc("mark_labels_printed", {
+        _ids: chunk,
+        _user: user?.id ?? null,
+      });
+      if (error) throw error;
+    }
+    await supabase.from("audit_logs").insert({
+      action: "labels_printed",
+      entity_type: "registration",
+      actor_id: user?.id ?? null,
+      details: { count: ids.length, event_id: selectedEventId } as any,
+    });
+  }
+
   async function handlePrintSingle(reg: RegistrationData) {
     if (!labelTemplate || labelTemplate.elements.length === 0) {
       toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
       return;
     }
+    const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
+    if (usesQr && !reg.qr_token) {
+      toast.error("Inscrito sem QR token (pagamento pendente)");
+      return;
+    }
     setPrinting(true);
     try {
       await printLabels([reg as unknown as Record<string, any>], labelTemplate);
+      try { await markPrintedRpc([reg.id]); } catch (e) { console.error(e); }
+      load();
     } catch (e) {
       console.error(e);
       toast.error("Erro ao gerar etiqueta");
@@ -191,6 +231,10 @@ export default function AdminRegistrations() {
         let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
         if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
         if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+        if (labelFilter === "unprinted") q = q.is("label_printed_at", null);
+        if (labelFilter === "printed") q = q.not("label_printed_at", "is", null);
+        if (materialFilter === "pending") q = q.is("material_delivered_at", null);
+        if (materialFilter === "delivered") q = q.not("material_delivered_at", "is", null);
         if (debouncedSearch) {
           const escaped = debouncedSearch.replace(/[%,]/g, "");
           q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
@@ -200,20 +244,66 @@ export default function AdminRegistrations() {
       const allFiltered = applyDynamicFilters(all, dynamicFilters);
       const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
       const eligible = usesQr ? allFiltered.filter(r => !!r.qr_token) : allFiltered;
-      const skipped = allFiltered.length - eligible.length;
+      const semQr = allFiltered.length - eligible.length;
       if (eligible.length === 0) {
         toast.error("Nenhum inscrito elegível (sem QR token disponível)");
+        setPrinting(false);
         return;
       }
-      const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
-        (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
-      if (!window.confirm(msg)) return;
-      await printLabels(eligible as unknown as Record<string, any>[], labelTemplate);
+      const novos = eligible.filter(r => !r.label_printed_at);
+      const jaImpressos = eligible.filter(r => !!r.label_printed_at);
+      setPrintDialog({ novos, jaImpressos, semQr });
     } catch (e) {
       console.error(e);
       toast.error("Erro ao gerar etiquetas");
     }
     setPrinting(false);
+  }
+
+  async function executePrint(toPrint: RegistrationData[]) {
+    if (!labelTemplate || toPrint.length === 0) return;
+    setPrinting(true);
+    try {
+      await printLabels(toPrint as unknown as Record<string, any>[], labelTemplate);
+      try { await markPrintedRpc(toPrint.map(r => r.id)); } catch (e) { console.error(e); }
+      setPrintDialog(null);
+      load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar etiquetas");
+    }
+    setPrinting(false);
+  }
+
+  async function unmarkPrinted(reg: RegistrationData) {
+    const { error } = await (supabase.from("registrations") as any).update({
+      label_printed_at: null,
+      label_printed_by: null,
+    }).eq("id", reg.id);
+    if (error) { toast.error("Erro ao desmarcar etiqueta"); return; }
+    toast.success("Etiqueta marcada como não impressa");
+    setSelectedReg({ ...reg, label_printed_at: null, label_printed_by: null });
+    load();
+  }
+
+  async function toggleMaterial(reg: RegistrationData, deliver: boolean) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const payload = deliver
+      ? { material_delivered_at: new Date().toISOString(), material_delivered_by: user?.id ?? null }
+      : { material_delivered_at: null, material_delivered_by: null };
+    const { error } = await (supabase.from("registrations") as any).update(payload).eq("id", reg.id);
+    if (error) { toast.error("Erro ao atualizar material"); return; }
+    await supabase.from("audit_logs").insert({
+      action: deliver ? "material_delivered" : "material_undelivered",
+      entity_type: "registration",
+      entity_id: reg.id,
+      actor_id: user?.id ?? null,
+      details: { full_name: reg.full_name } as any,
+    });
+    // Optimistic local update
+    setRegistrations(prev => prev.map(r => r.id === reg.id ? ({ ...r, ...payload } as RegistrationData) : r));
+    if (selectedReg?.id === reg.id) setSelectedReg({ ...reg, ...payload } as RegistrationData);
+    toast.success(deliver ? "Material marcado como entregue" : "Material revertido para pendente");
   }
 
 
@@ -345,6 +435,8 @@ export default function AdminRegistrations() {
     { label: "Tipo", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
     { label: "Status pagamento", getValue: r => r.payment_status === "approved" ? "Pago" : r.payment_status === "pending" ? "Pendente" : r.payment_status },
     { label: "Check-in", getValue: r => r.checkin_status === "checked_in" ? `Sim — ${r.checkin_at ? new Date(r.checkin_at).toLocaleString("pt-BR") : ""}` : "Não" },
+    { label: "Etiqueta impressa", getValue: r => r.label_printed_at ? `Sim — ${new Date(r.label_printed_at).toLocaleString("pt-BR")}${r.label_print_count > 1 ? ` (${r.label_print_count}x)` : ""}` : "Não" },
+    { label: "Material entregue", getValue: r => r.material_delivered_at ? `Sim — ${new Date(r.material_delivered_at).toLocaleString("pt-BR")}` : "Não" },
     { label: "Data da inscrição", getValue: r => new Date(r.created_at).toLocaleString("pt-BR") },
   ];
 
@@ -377,8 +469,8 @@ export default function AdminRegistrations() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar por nome, e-mail ou código" value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
@@ -392,12 +484,28 @@ export default function AdminRegistrations() {
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="all">Status: Todos</SelectItem>
             <SelectItem value="pending_payment">Pendente</SelectItem>
             <SelectItem value="confirmed">Confirmado</SelectItem>
             <SelectItem value="canceled">Cancelado</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={labelFilter} onValueChange={(v) => setLabelFilter(v as any)}>
+          <SelectTrigger className="w-48"><SelectValue placeholder="Etiqueta" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Etiqueta: Todos</SelectItem>
+            <SelectItem value="unprinted">Não impressos</SelectItem>
+            <SelectItem value="printed">Impressos</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={materialFilter} onValueChange={(v) => setMaterialFilter(v as any)}>
+          <SelectTrigger className="w-48"><SelectValue placeholder="Material" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Material: Todos</SelectItem>
+            <SelectItem value="pending">Pendente</SelectItem>
+            <SelectItem value="delivered">Entregue</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -421,6 +529,8 @@ export default function AdminRegistrations() {
               <TableHead>Tipo</TableHead>
               <TableHead>Pagamento</TableHead>
               <TableHead>Check-in</TableHead>
+              <TableHead className="text-center">Etiqueta</TableHead>
+              <TableHead className="text-center">Material</TableHead>
               <TableHead>Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -451,6 +561,39 @@ export default function AdminRegistrations() {
                     {r.checkin_status === "checked_in" ? "✓" : "—"}
                   </Badge>
                 </TableCell>
+                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                  {r.label_printed_at ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="default" className="gap-1 cursor-help">
+                            <Tag className="h-3 w-3" /> Impressa
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {new Date(r.label_printed_at).toLocaleString("pt-BR")}
+                          {r.label_print_count > 1 && ` (${r.label_print_count}x)`}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span className="text-muted-foreground text-sm">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-center gap-2">
+                    <Checkbox
+                      checked={!!r.material_delivered_at}
+                      onCheckedChange={(v) => toggleMaterial(r, !!v)}
+                      aria-label="Material entregue"
+                    />
+                    {r.material_delivered_at && (
+                      <Badge variant="default" className="gap-1">
+                        <Package className="h-3 w-3" /> Entregue
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     {r.payment_status === "approved" && r.checkin_status !== "checked_in" && (
@@ -477,7 +620,7 @@ export default function AdminRegistrations() {
               </TableRow>
             ))}
             {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{totalCount === 0 ? "Nenhum inscrito encontrado" : "Nenhum resultado nos filtros aplicados"}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">{totalCount === 0 ? "Nenhum inscrito encontrado" : "Nenhum resultado nos filtros aplicados"}</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -505,6 +648,20 @@ export default function AdminRegistrations() {
                 <Button size="sm" variant="outline" onClick={() => handlePrintSingle(selectedReg)} disabled={printing} className="gap-1.5">
                   <Printer className="h-3.5 w-3.5" /> Imprimir etiqueta
                 </Button>
+                {selectedReg.label_printed_at && (
+                  <Button size="sm" variant="outline" onClick={() => unmarkPrinted(selectedReg)} className="gap-1.5">
+                    <RotateCcw className="h-3.5 w-3.5" /> Marcar como não impresso
+                  </Button>
+                )}
+                {selectedReg.material_delivered_at ? (
+                  <Button size="sm" variant="outline" onClick={() => toggleMaterial(selectedReg, false)} className="gap-1.5">
+                    <RotateCcw className="h-3.5 w-3.5" /> Reverter material
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => toggleMaterial(selectedReg, true)} className="gap-1.5">
+                    <Package className="h-3.5 w-3.5" /> Marcar material entregue
+                  </Button>
+                )}
                 {selectedReg.checkin_status === "checked_in" && (
                   <Button size="sm" variant="destructive" onClick={() => setUncheckinTarget(selectedReg)} className="gap-1.5">
                     <UserMinus className="h-3.5 w-3.5" /> Descredenciar
@@ -565,6 +722,57 @@ export default function AdminRegistrations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Print batch dialog: choose between only-new vs reprint-all */}
+      <Dialog open={!!printDialog} onOpenChange={(o) => { if (!o) setPrintDialog(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">Imprimir etiquetas</DialogTitle>
+          </DialogHeader>
+          {printDialog && (
+            <div className="space-y-4">
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Novos (não impressos):</span>
+                  <span className="font-semibold text-foreground">{printDialog.novos.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Já impressos antes:</span>
+                  <span className="font-semibold text-foreground">{printDialog.jaImpressos.length}</span>
+                </div>
+                {printDialog.semQr > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Pulados (sem QR):</span>
+                    <span className="font-semibold text-foreground">{printDialog.semQr}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={() => executePrint(printDialog.novos)}
+                  disabled={printing || printDialog.novos.length === 0}
+                  className="gap-2"
+                >
+                  {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  Imprimir só os novos ({printDialog.novos.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => executePrint([...printDialog.novos, ...printDialog.jaImpressos])}
+                  disabled={printing}
+                  className="gap-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  Reimprimir todos ({printDialog.novos.length + printDialog.jaImpressos.length})
+                </Button>
+                <Button variant="ghost" onClick={() => setPrintDialog(null)} disabled={printing}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
