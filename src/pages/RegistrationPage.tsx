@@ -569,6 +569,7 @@ export default function RegistrationPage() {
                 errors={buyerErrors}
                 customFields={customFields}
                 title="Responsável pela Compra (também participante)"
+                isBuyer
               />
             ) : (
               <BuyerOnlySection
