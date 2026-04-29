@@ -156,12 +156,7 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    if (!buyerEmailCandidate || !isValidEmail(buyerEmailCandidate)) {
-      return new Response(
-        JSON.stringify({ error: "E-mail do responsável é obrigatório para o pagamento." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+
 
     // Validate each participant
     for (const p of participants) {
