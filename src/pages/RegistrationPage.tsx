@@ -282,8 +282,7 @@ function validateBuyerOnly(data: Record<string, string>): Record<string, string>
   else if (!isValidCPF(data.cpf)) errors.cpf = "CPF inválido";
   if (!data.phone?.trim()) errors.phone = "WhatsApp obrigatório";
   else if (!isValidPhone(data.phone)) errors.phone = "Telefone inválido";
-  if (!data.email?.trim()) errors.email = "E-mail obrigatório para o responsável";
-  else if (!isValidEmail(data.email)) errors.email = "E-mail inválido";
+  if (data.email?.trim() && !isValidEmail(data.email)) errors.email = "E-mail inválido";
   return errors;
 }
 
