@@ -11,3 +11,7 @@ verify_jwt = false
 
 [functions.reconcile-payment]
 verify_jwt = false
+
+[functions.manual-confirm-order]
+verify_jwt = false
+
