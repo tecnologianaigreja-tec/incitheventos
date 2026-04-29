@@ -7,10 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle, FileDown, Loader2 } from "lucide-react";
+import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus } from "lucide-react";
 import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { generateEventReportPdf } from "@/lib/reportPdf";
+import EditRegistrationDialog from "@/components/EditRegistrationDialog";
+import { printLabels } from "@/lib/labelRenderer";
+import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 
 interface EventBasic {
   id: string;
