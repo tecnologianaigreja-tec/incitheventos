@@ -606,6 +606,11 @@ export type Database = {
           event_id: string
           full_name: string
           id: string
+          label_print_count: number
+          label_printed_at: string | null
+          label_printed_by: string | null
+          material_delivered_at: string | null
+          material_delivered_by: string | null
           order_id: string
           payment_status: Database["public"]["Enums"]["payment_status"]
           phone: string | null
@@ -636,6 +641,11 @@ export type Database = {
           event_id: string
           full_name: string
           id?: string
+          label_print_count?: number
+          label_printed_at?: string | null
+          label_printed_by?: string | null
+          material_delivered_at?: string | null
+          material_delivered_by?: string | null
           order_id: string
           payment_status?: Database["public"]["Enums"]["payment_status"]
           phone?: string | null
@@ -666,6 +676,11 @@ export type Database = {
           event_id?: string
           full_name?: string
           id?: string
+          label_print_count?: number
+          label_printed_at?: string | null
+          label_printed_by?: string | null
+          material_delivered_at?: string | null
+          material_delivered_by?: string | null
           order_id?: string
           payment_status?: Database["public"]["Enums"]["payment_status"]
           phone?: string | null
@@ -736,6 +751,10 @@ export type Database = {
     Functions: {
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_checkin_operator: { Args: { _user_id: string }; Returns: boolean }
+      mark_labels_printed: {
+        Args: { _ids: string[]; _user: string }
+        Returns: number
+      }
     }
     Enums: {
       admin_role: "superadmin" | "admin" | "checkin_operator"
