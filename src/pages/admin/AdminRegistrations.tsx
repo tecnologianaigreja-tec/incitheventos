@@ -301,8 +301,18 @@ export default function AdminRegistrations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl font-bold text-foreground">Inscritos</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Badge variant="outline" className="text-sm">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrintBatch}
+            disabled={printing || filtered.length === 0}
+            className="gap-2"
+          >
+            {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            Imprimir etiquetas ({filtered.length})
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -390,17 +400,28 @@ export default function AdminRegistrations() {
                     {r.checkin_status === "checked_in" ? "✓" : "—"}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  {r.payment_status === "approved" && r.checkin_status !== "checked_in" && (
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1">
+                    {r.payment_status === "approved" && r.checkin_status !== "checked_in" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => manualCheckin(r)}
+                        className="gap-1"
+                      >
+                        <CheckCircle className="h-3 w-3" /> Check-in
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={(e) => { e.stopPropagation(); manualCheckin(r); }}
+                      onClick={() => handlePrintSingle(r)}
                       className="gap-1"
+                      title="Imprimir etiqueta"
                     >
-                      <CheckCircle className="h-3 w-3" /> Check-in
+                      <Printer className="h-3 w-3" />
                     </Button>
-                  )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
