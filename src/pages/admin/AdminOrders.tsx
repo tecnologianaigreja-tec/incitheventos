@@ -95,6 +95,15 @@ export default function AdminOrders() {
 
   if (loading) return <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>;
 
+  const q = search.trim().toLowerCase();
+  const filteredOrders = q
+    ? orders.filter(o =>
+        (o.buyer_name || "").toLowerCase().includes(q) ||
+        (o.order_code || "").toLowerCase().includes(q) ||
+        (o.buyer_email || "").toLowerCase().includes(q)
+      )
+    : orders;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
