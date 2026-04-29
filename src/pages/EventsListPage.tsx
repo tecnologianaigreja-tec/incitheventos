@@ -444,6 +444,7 @@ export default function EventsListPage() {
                                     {(r.payment_status === "approved" || r.registration_status === "confirmed") ? "Confirmada" : "Pendente"}
                                   </span>
                                 </p>
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                 {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
                                   <Button
                                     size="sm"
@@ -559,6 +560,7 @@ export default function EventsListPage() {
                                     onSubmitted={handleCpfLookup}
                                   />
                                 )}
+                                </div>
                               </div>
                             </CardContent>
                           </Card>
