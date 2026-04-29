@@ -76,6 +76,7 @@ export interface OrderData {
   payment_status: "pending" | "approved" | "refused" | "canceled" | "expired" | "refunded";
   payment_link: string | null;
   payment_provider_reference: string | null;
+  invoice_slug?: string | null;
   redirect_status_last_seen: string | null;
   webhook_status_last_seen: string | null;
   paid_at: string | null;
