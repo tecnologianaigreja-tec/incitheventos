@@ -241,8 +241,7 @@ function validateForm(data: Record<string, string>, customFields: EventFormField
   if (!data.full_name?.trim()) errors.full_name = "Nome obrigatório";
   if (!data.cpf?.trim()) errors.cpf = "CPF obrigatório";
   else if (!isValidCPF(data.cpf)) errors.cpf = "CPF inválido";
-  if (!data.email?.trim()) errors.email = "E-mail obrigatório";
-  else if (!isValidEmail(data.email)) errors.email = "E-mail inválido";
+  if (data.email?.trim() && !isValidEmail(data.email)) errors.email = "E-mail inválido";
 
   for (const field of customFields) {
     if (!field.is_required) continue;
