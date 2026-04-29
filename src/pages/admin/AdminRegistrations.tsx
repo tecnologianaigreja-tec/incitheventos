@@ -184,19 +184,30 @@ export default function AdminRegistrations() {
       toast.error("Configure o template de etiqueta em Etiquetas antes de imprimir");
       return;
     }
-    const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
-    const eligible = usesQr ? filtered.filter(r => !!r.qr_token) : filtered;
-    const skipped = filtered.length - eligible.length;
-    if (eligible.length === 0) {
-      toast.error("Nenhum inscrito elegível (sem QR token disponível)");
-      return;
-    }
-    const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
-      (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
-    if (!window.confirm(msg)) return;
-
     setPrinting(true);
     try {
+      // Fetch all matching registrations across pages (server-side filters preserved)
+      const all = await fetchAllPages<RegistrationData>(() => {
+        let q: any = supabase.from("registrations").select("*").order("created_at", { ascending: false });
+        if (selectedEventId !== "all") q = q.eq("event_id", selectedEventId);
+        if (statusFilter !== "all") q = q.eq("registration_status", statusFilter);
+        if (debouncedSearch) {
+          const escaped = debouncedSearch.replace(/[%,]/g, "");
+          q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%,registration_code.ilike.%${escaped}%`);
+        }
+        return q;
+      });
+      const allFiltered = applyDynamicFilters(all, dynamicFilters);
+      const usesQr = labelTemplate.elements.some(e => e.type === "qrcode");
+      const eligible = usesQr ? allFiltered.filter(r => !!r.qr_token) : allFiltered;
+      const skipped = allFiltered.length - eligible.length;
+      if (eligible.length === 0) {
+        toast.error("Nenhum inscrito elegível (sem QR token disponível)");
+        return;
+      }
+      const msg = `Imprimir ${eligible.length} etiqueta(s)?` +
+        (skipped > 0 ? `\n${skipped} pulado(s) por estar(em) sem QR Code (pagamento pendente).` : "");
+      if (!window.confirm(msg)) return;
       await printLabels(eligible as unknown as Record<string, any>[], labelTemplate);
     } catch (e) {
       console.error(e);
