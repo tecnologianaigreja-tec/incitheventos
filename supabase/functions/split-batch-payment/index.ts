@@ -260,7 +260,8 @@ Deno.serve(async (req) => {
         total_price_cents: recalc.total_cents,
         participants_count: recalc.count,
       };
-      const link = await generatePaymentLink(supabaseUrl, event, refreshed, recalc.pending_regs);
+      const refreshedWithId = { ...refreshed, id: originalOrder.id };
+      const link = await generatePaymentLink(supabase, supabaseUrl, event, refreshedWithId, recalc.pending_regs);
 
       if (link) {
         await supabase.from("orders").update({ payment_link: link }).eq("id", originalOrder.id);
@@ -348,6 +349,7 @@ Deno.serve(async (req) => {
 
     // Generate payment link for the new individual order
     const link = await generatePaymentLink(
+      supabase,
       supabaseUrl,
       event,
       { ...newOrder, order_nsu: newOrderNsu },
