@@ -5,8 +5,18 @@ import { formatCentsToBRL } from "@/lib/constants";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, CheckCircle2, Search } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, Search, ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
@@ -21,6 +31,12 @@ export default function AdminOrders() {
   const [reconcilingAll, setReconcilingAll] = useState(false);
   const [search, setSearch] = useState("");
 
+  // Manual confirmation dialog state
+  const [manualOrder, setManualOrder] = useState<OrderData | null>(null);
+  const [manualReason, setManualReason] = useState("");
+  const [manualProof, setManualProof] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
+
   async function load() {
     const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
     setOrders((data || []) as unknown as OrderData[]);
@@ -29,31 +45,34 @@ export default function AdminOrders() {
 
   useEffect(() => { load(); }, []);
 
+  async function callFunction(name: string, payload: Record<string, unknown>, withAuth = false) {
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    };
+    if (withAuth) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    }
+    const res = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/${name}`,
+      { method: "POST", headers, body: JSON.stringify(payload) }
+    );
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data };
+  }
+
   async function reconcileOne(order: OrderData) {
     setReconcilingId(order.id);
     try {
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({ order_id: order.id }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, data } = await callFunction("reconcile-payment", { order_id: order.id });
+      if (!ok) {
         toast.error(data.error || "Falha ao verificar.");
         return;
       }
-      if (data.approved > 0) {
-        toast.success(`Pagamento confirmado para ${order.order_code}!`);
-      } else {
-        toast.info(`Pagamento ainda pendente em ${order.order_code}.`);
-      }
+      if (data.approved > 0) toast.success(`Pagamento confirmado para ${order.order_code}!`);
+      else toast.info(`Pagamento ainda pendente em ${order.order_code}.`);
       await load();
     } catch (err) {
       console.error("Erro ao reconciliar:", err);
@@ -66,20 +85,8 @@ export default function AdminOrders() {
   async function reconcileAll() {
     setReconcilingAll(true);
     try {
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/reconcile-payment`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({ scan_all: true }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, data } = await callFunction("reconcile-payment", { scan_all: true });
+      if (!ok) {
         toast.error(data.error || "Falha ao verificar pendentes.");
         return;
       }
@@ -90,6 +97,46 @@ export default function AdminOrders() {
       toast.error("Falha de conexão.");
     } finally {
       setReconcilingAll(false);
+    }
+  }
+
+  function openManualDialog(order: OrderData) {
+    setManualOrder(order);
+    setManualReason("");
+    setManualProof("");
+  }
+
+  async function submitManualConfirmation() {
+    if (!manualOrder) return;
+    if (manualReason.trim().length < 5) {
+      toast.error("Informe um motivo com pelo menos 5 caracteres.");
+      return;
+    }
+    setManualSubmitting(true);
+    try {
+      const { ok, data } = await callFunction(
+        "manual-confirm-order",
+        {
+          order_id: manualOrder.id,
+          reason: manualReason.trim(),
+          proof_reference: manualProof.trim() || undefined,
+        },
+        true
+      );
+      if (!ok) {
+        toast.error(data.error || "Falha ao confirmar manualmente.");
+        return;
+      }
+      toast.success(
+        `${manualOrder.order_code} confirmado · ${data.confirmed_registrations} inscrição(ões) liberada(s).`
+      );
+      setManualOrder(null);
+      await load();
+    } catch (err) {
+      console.error("Erro ao confirmar manualmente:", err);
+      toast.error("Falha de conexão.");
+    } finally {
+      setManualSubmitting(false);
     }
   }
 
@@ -110,7 +157,7 @@ export default function AdminOrders() {
         <div>
           <h2 className="font-serif text-xl font-bold text-foreground">Pedidos</h2>
           <p className="text-sm text-muted-foreground">
-            Pedidos pendentes podem ser verificados manualmente caso o webhook tenha falhado.
+            Pedidos pendentes podem ser verificados automaticamente ou confirmados manualmente quando você tem o comprovante.
           </p>
         </div>
         <Button
@@ -160,20 +207,33 @@ export default function AdminOrders() {
                 <TableCell className="text-sm text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")}</TableCell>
                 <TableCell className="text-right">
                   {o.payment_status === "pending" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => reconcileOne(o)}
-                      disabled={reconcilingId === o.id}
-                      className="gap-1"
-                    >
-                      {reconcilingId === o.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-3 w-3" />
-                      )}
-                      Verificar
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => reconcileOne(o)}
+                        disabled={reconcilingId === o.id}
+                        className="gap-1"
+                        title="Verificar status na InfinitePay"
+                      >
+                        {reconcilingId === o.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
+                        Verificar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => openManualDialog(o)}
+                        className="gap-1"
+                        title="Confirmar manualmente (com comprovante)"
+                      >
+                        <ShieldCheck className="h-3 w-3" />
+                        Confirmar
+                      </Button>
+                    </div>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
                   )}
@@ -186,6 +246,55 @@ export default function AdminOrders() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={!!manualOrder} onOpenChange={(open) => !open && setManualOrder(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar pagamento manualmente</DialogTitle>
+            <DialogDescription>
+              Use somente quando tiver comprovante externo (PIX, transferência) e o webhook não tiver chegado.
+              {manualOrder && (
+                <span className="mt-2 block text-foreground">
+                  <strong>{manualOrder.order_code}</strong> · {manualOrder.buyer_name} ·{" "}
+                  {formatCentsToBRL(manualOrder.total_price_cents)}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="manual-reason">Motivo *</Label>
+              <Textarea
+                id="manual-reason"
+                placeholder="Ex: Comprovante PIX recebido por WhatsApp em 29/04/2026, valor R$ 50,00"
+                value={manualReason}
+                onChange={(e) => setManualReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="manual-proof">Referência do comprovante (opcional)</Label>
+              <Input
+                id="manual-proof"
+                placeholder="Ex: ID transação, autenticação ou ID PIX"
+                value={manualProof}
+                onChange={(e) => setManualProof(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualOrder(null)} disabled={manualSubmitting}>
+              Cancelar
+            </Button>
+            <Button onClick={submitManualConfirmation} disabled={manualSubmitting}>
+              {manualSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar pagamento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
