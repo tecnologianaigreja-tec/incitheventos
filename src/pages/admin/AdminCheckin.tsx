@@ -375,7 +375,7 @@ export default function AdminCheckin() {
               Participantes presentes
             </h3>
             <Badge variant="outline" className="text-sm">
-              {dynamicFilters.length > 0 ? `${filteredCheckedIn.length} de ${checkedIn.length}` : checkedIn.length} presente{checkedIn.length !== 1 ? "s" : ""}
+              {totalCount} presente{totalCount !== 1 ? "s" : ""}
             </Badge>
           </div>
 
@@ -400,7 +400,7 @@ export default function AdminCheckin() {
 
           {filteredCheckedIn.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              {checkedIn.length === 0 ? "Nenhum check-in realizado ainda" : "Nenhum resultado para os filtros aplicados"}
+              {totalCount === 0 ? "Nenhum check-in realizado ainda" : "Nenhum resultado para os filtros aplicados"}
             </p>
           ) : (
             <>
@@ -415,7 +415,7 @@ export default function AdminCheckin() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paged.map((r, i) => (
+                    {filteredCheckedIn.map((r, i) => (
                       <TableRow key={r.id}>
                         <TableCell className="text-muted-foreground">{(page - 1) * PAGE_SIZE + i + 1}</TableCell>
                         <TableCell className="font-medium">{r.full_name}</TableCell>
@@ -429,18 +429,12 @@ export default function AdminCheckin() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 pt-2">
-                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm text-muted-foreground">Página {page} de {totalPages}</span>
-                  <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
+              <AdminPagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={totalCount}
+                onPageChange={setPage}
+              />
             </>
           )}
         </CardContent>
