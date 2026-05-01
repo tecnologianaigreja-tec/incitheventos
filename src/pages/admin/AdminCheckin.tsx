@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
-import { applyDynamicFiltersToQuery } from "@/lib/dynamicFilterQuery";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 import AdminPagination from "@/components/admin/AdminPagination";
 
 const PAGE_SIZE = 50;
@@ -134,27 +134,29 @@ export default function AdminCheckin() {
   }, []);
 
   const loadCheckedIn = useCallback(async () => {
+    // Fetch ALL checked-in registrations, then filter + paginate client-side.
+    // Server-side JSONB path filtering breaks for custom_fields keys with spaces/accents
+    // (e.g. "ÁREA DE CONG. A QUE PERTENCE "), so we mirror the proven approach used
+    // in AdminRegistrations.tsx via getFieldValue (which normalizes keys).
+    const all = await fetchAllPages<RegistrationData>(() => {
+      let q = supabase
+        .from("registrations")
+        .select("*")
+        .eq("checkin_status", "checked_in")
+        .order("checkin_at", { ascending: false });
+
+      if (debouncedSearch) {
+        const escaped = debouncedSearch.replace(/[%,]/g, "");
+        q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
+      }
+      return q;
+    });
+
+    const filtered = applyDynamicFilters(all as RegistrationData[], dynamicFilters);
+    setTotalCount(filtered.length);
+
     const from = (page - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let query = supabase
-      .from("registrations")
-      .select("*", { count: "exact" })
-      .eq("checkin_status", "checked_in")
-      .order("checkin_at", { ascending: false });
-
-    if (debouncedSearch) {
-      const escaped = debouncedSearch.replace(/[%,]/g, "");
-      query = query.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
-    }
-
-    // Apply dynamic filters server-side so total + pagination reflect them
-    query = applyDynamicFiltersToQuery(query, dynamicFilters);
-
-    const { data, count } = await query.range(from, to);
-    const regs = (data || []) as unknown as RegistrationData[];
-    setCheckedIn(regs);
-    setTotalCount(count || 0);
+    setCheckedIn(filtered.slice(from, from + PAGE_SIZE));
   }, [page, debouncedSearch, dynamicFilters]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
@@ -434,8 +436,8 @@ export default function AdminCheckin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Filtered list of checked-in (server already applied filters; this is just defensive for UI search of checked-in list)
-  const filteredCheckedIn = applyDynamicFilters(checkedIn, []);
+  // `checkedIn` is already the filtered + paginated slice from loadCheckedIn().
+  const filteredCheckedIn = checkedIn;
 
   return (
     <div className="space-y-6">
