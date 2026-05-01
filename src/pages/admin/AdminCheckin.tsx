@@ -180,11 +180,20 @@ export default function AdminCheckin() {
     }
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("registrations").update({
-      checkin_status: "checked_in",
-      checkin_at: new Date().toISOString(),
-      checkin_by_user_id: user?.id,
-    }).eq("id", registration.id);
+    const checkinAt = new Date().toISOString();
+
+    // Idempotent / race-safe update: only succeeds if not yet checked in.
+    // Two concurrent operators can't both succeed.
+    const { data: updatedRows, error } = await supabase
+      .from("registrations")
+      .update({
+        checkin_status: "checked_in",
+        checkin_at: checkinAt,
+        checkin_by_user_id: user?.id,
+      })
+      .eq("id", registration.id)
+      .eq("checkin_status", "not_checked_in")
+      .select("id, checkin_at");
 
     if (error) {
       setResult({ reg: registration, status: "error" });
@@ -194,13 +203,33 @@ export default function AdminCheckin() {
       return;
     }
 
-    await supabase.from("checkin_logs").insert({
+    // No row updated → someone else already checked them in (or status changed)
+    if (!updatedRows || updatedRows.length === 0) {
+      // Re-fetch to show actual checkin_at
+      const { data: latest } = await supabase
+        .from("registrations")
+        .select("*")
+        .eq("id", registration.id)
+        .maybeSingle();
+      const reg = (latest as unknown as RegistrationData) || registration;
+      setResult({ reg: { ...reg, checkin_status: "checked_in" }, status: "already" });
+      playBeep("warning");
+      toast.warning("Participante já registrado");
+      scheduleResultClear(2500);
+      return;
+    }
+
+    // Best-effort log; surface failure to console but do not block the UX
+    const { error: logError } = await supabase.from("checkin_logs").insert({
       registration_id: registration.id,
       action_type: action,
       checked_by_user_id: user?.id,
     });
+    if (logError) {
+      console.warn("[checkin] log insert failed", logError);
+    }
 
-    const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: new Date().toISOString() };
+    const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: checkinAt };
     setResult({ reg: updated, status: "success" });
     playBeep("success");
     toast.success(`Check-in de ${registration.full_name} realizado!`);
