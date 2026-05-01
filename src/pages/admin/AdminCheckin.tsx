@@ -245,11 +245,18 @@ export default function AdminCheckin() {
     const token = (rawToken || "").trim();
     if (!token) return;
 
-    // Per-token cooldown: ignore the same QR being scanned repeatedly within 3s
+    // Per-token cooldown: ignore the same QR being scanned repeatedly within 3s.
+    // Also evict old entries to avoid unbounded growth in long sessions.
     const now = Date.now();
-    const last = lastScannedRef.current.get(token) || 0;
+    const map = lastScannedRef.current;
+    const last = map.get(token) || 0;
     if (now - last < 3000) return;
-    lastScannedRef.current.set(token, now);
+    map.set(token, now);
+    if (map.size > 200) {
+      for (const [k, t] of map) {
+        if (now - t > 60000) map.delete(k);
+      }
+    }
 
     if (processingRef.current) return;
     processingRef.current = true;
