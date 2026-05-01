@@ -149,6 +149,19 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
   }
 
   const canApply = hasOptions ? selectedValues.length > 0 : !!filterValue;
+  const hasSelectionInProgress = !!selectedField || !!filterValue || selectedValues.length > 0;
+
+  function clearSelection() {
+    setSelectedField("");
+    setFilterValue("");
+    setSelectedValues([]);
+    setPopoverOpen(false);
+  }
+
+  function clearAll() {
+    clearSelection();
+    onFiltersChange([]);
+  }
 
   return (
     <div className="space-y-3">
