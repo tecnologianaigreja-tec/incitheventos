@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
-import { applyDynamicFiltersToQuery } from "@/lib/dynamicFilterQuery";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 import AdminPagination from "@/components/admin/AdminPagination";
 
 const PAGE_SIZE = 50;

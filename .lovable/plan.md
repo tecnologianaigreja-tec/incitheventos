@@ -1,60 +1,71 @@
-## Diagnóstico dos dois erros do print
+## Problema identificado
 
-### 1. `'facingMode' should be string or object with exact as key` → "Não foi possível acessar a câmera"
+O filtro "ÁREA DE CONG. A QUE PERTENCE" (e qualquer outro campo customizado armazenado em `custom_fields` JSONB) não retorna resultados na tela **Check-in** ao selecionar um valor.
 
-A biblioteca `html5-qrcode` **não aceita** `{ ideal: "environment" }`. A API dela só permite:
-- string: `"environment"` ou `"user"`
-- objeto: `{ exact: "environment" }`
+### Causa raiz
 
-Hoje em `src/pages/admin/AdminCheckin.tsx` (linha 364) chamamos `tryStart(scanner, { facingMode: { ideal: "environment" } })`. A primeira tentativa falha com erro de validação (não é `OverconstrainedError`/`NotFoundError`), então o `catch` re-lança e cai no toast genérico "Não foi possível acessar a câmera". Isso é puramente um bug de configuração — a câmera nem chega a ser solicitada.
+A tela `AdminCheckin.tsx` aplica os filtros **no servidor** via `applyDynamicFiltersToQuery`, que monta um path tipo:
 
-### 2. `AuthApiError: Invalid Refresh Token: Refresh Token Not Found` (400 em `/auth/v1/token?grant_type=refresh_token`)
+```
+custom_fields->>ÁREA DE CONG. A QUE PERTENCE 
+```
 
-O `localStorage` tem uma sessão antiga do Supabase cujo refresh token foi invalidado (provavelmente por logout em outra aba, expiração no servidor, ou recriação do projeto). Como `autoRefreshToken: true`, o cliente tenta renovar no carregamento da página e recebe 400. Hoje **não tratamos esse evento**, então o erro fica visível no console e a sessão permanece "fantasma" no storage.
+Esse `field_key` real do banco contém **acentos, espaços e até espaço final**. O PostgREST (cliente Supabase JS) não consegue serializar corretamente esse caminho em `.in(path, values)` / `.ilike(path, ...)`, então a query devolve 0 linhas mesmo havendo participantes com aquela área.
 
----
+A tela `AdminRegistrations` **não tem esse problema** porque aplica os filtros no **cliente** com `applyDynamicFilters`, que usa `getFieldValue` — função que já normaliza chaves (remove acentos, espaços, etc.) e procura corretamente no JSONB.
 
-## Mudanças propostas
+Confirmado no banco:
+- `field_key` registrado: `"ÁREA DE CONG. A QUE PERTENCE "` (com espaço final)
+- Valor armazenado em `registrations.custom_fields` sob a mesma chave exata
+- Filtro server-side falha; filtro client-side funciona
 
-### A) `src/pages/admin/AdminCheckin.tsx` — corrigir startup da câmera
+## Solução
 
-Trocar a estratégia de `facingMode` para algo que a `html5-qrcode` aceite e que funcione tanto no celular (traseira) quanto no desktop (qualquer câmera):
+Alinhar a tela de Check-in à mesma estratégia (já validada e funcionando) usada em `AdminRegistrations`: **filtragem no cliente** sobre o conjunto de check-ins, mantendo paginação local.
 
-1. **1ª tentativa:** `tryStart(scanner, { facingMode: "environment" })` — string simples, válida pela lib, pede câmera traseira no celular.
-2. **2ª tentativa (fallback se falhar com `OverconstrainedError` ou `NotFoundError`):** `tryStart(scanner, { facingMode: "user" })` — câmera frontal/única (cobre desktops/laptops sem câmera traseira).
-3. **3ª tentativa (último recurso):** enumerar câmeras com `Html5Qrcode.getCameras()` e iniciar pela primeira disponível por `deviceId`. Cobre dispositivos onde nenhum `facingMode` resolve.
+### Mudanças em `src/pages/admin/AdminCheckin.tsx`
 
-Resto do fluxo (polling do `#qr-reader`, `playsinline`/`muted`/`object-fit:cover` no `<video>`, beep, cooldown por token, auto-clear) **permanece exatamente como está**. Apenas a chamada do `facingMode` muda.
+1. **Remover** o uso de `applyDynamicFiltersToQuery` no `loadCheckedIn`.
+2. **Buscar todos os check-ins** com `fetchAllPages` (mesmo padrão de `AdminRegistrations`) — sem range na query base, apenas filtros simples (status + busca textual).
+3. **Aplicar `applyDynamicFilters` no cliente** sobre o array completo, depois paginar localmente (slice por `PAGE_SIZE`).
+4. **`totalCount`** passa a refletir o tamanho do array já filtrado (mantém o card "Presentes (filtro aplicado)" correto).
+5. Remover a variável morta `filteredCheckedIn = applyDynamicFilters(checkedIn, [])` (passa a usar diretamente a lista paginada).
 
-### B) `src/integrations/supabase/client.ts` + tratamento global — eliminar erro de refresh token
+### O que NÃO muda (preservar funcionalidades existentes)
 
-Adicionar um listener global `supabase.auth.onAuthStateChange` em um único ponto que rode no boot do app (criar `src/lib/authBootstrap.ts` e importá-lo em `src/main.tsx`). Comportamento:
+- Scanner de câmera, beep, idempotência de check-in: intactos.
+- Busca textual por nome / e-mail / CPF: continua igual.
+- Filtros dos campos fixos (Área, Congregação, Cargo, Função) — continuam funcionando, agora via mesmo caminho do client-side.
+- Tela `AdminRegistrations` não é tocada.
+- `applyDynamicFiltersToQuery` permanece no projeto (não removemos para não impactar outros possíveis usos), apenas deixa de ser chamado pelo Check-in.
 
-- Quando o evento for `TOKEN_REFRESHED` com `session === null`, ou quando ocorrer `SIGNED_OUT`, chamar `supabase.auth.signOut({ scope: 'local' })` para **limpar o storage corrompido** silenciosamente.
-- Não redirecionar nada — as páginas protegidas (`CheckinOperatorPage`, `AdminLayout`) já redirecionam pra tela de login quando `getUser()` retorna nulo, então o usuário simplesmente cai no login se estava autenticado.
-- Adicionalmente, no `client.ts`, manter `persistSession: true` mas o listener garante que tokens inválidos sejam descartados no boot, parando o loop de tentativas de refresh.
+## Detalhes técnicos
 
-Isso elimina os logs `Failed to load resource ... 400` e `AuthApiError: Invalid Refresh Token` do print sem deslogar nenhum usuário válido.
+```ts
+// Nova lógica de loadCheckedIn (resumo)
+const all = await fetchAllPages<RegistrationData>(() => {
+  let q = supabase.from("registrations")
+    .select("*")
+    .eq("checkin_status", "checked_in")
+    .order("checkin_at", { ascending: false });
+  if (debouncedSearch) {
+    const escaped = debouncedSearch.replace(/[%,]/g, "");
+    q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
+  }
+  return q;
+});
 
----
+const filtered = applyDynamicFilters(all, dynamicFilters);
+setTotalCount(filtered.length);
 
-## O que NÃO muda (sem regressões)
+const from = (page - 1) * PAGE_SIZE;
+setCheckedIn(filtered.slice(from, from + PAGE_SIZE));
+```
 
-- Lógica de check-in (cooldown 3s por token, idempotência no UPDATE, `checkin_logs`, beeps success/warning/error, auto-clear do feedback).
-- Preview da câmera (container `#qr-reader` com `aspect-square`, overlay de "Iniciando câmera...", `playsinline`/`muted`).
-- Busca manual, lista de presentes, filtros dinâmicos, paginação, botão "Limpar filtros".
-- Rotas, RLS, Edge Functions, schema do banco — nada disso é tocado.
-- Login do operador (`/checkin/login`) e fluxo do admin continuam idênticos.
+## Validação pós-implementação
 
-## Arquivos modificados
-
-- `src/pages/admin/AdminCheckin.tsx` — apenas as 2 chamadas `tryStart(...)` e a adição do fallback por `getCameras()`.
-- `src/integrations/supabase/client.ts` — sem mudança estrutural; possível pequeno comentário.
-- `src/lib/authBootstrap.ts` — **novo** arquivo, ~15 linhas, com o listener `onAuthStateChange`.
-- `src/main.tsx` — uma linha de `import "./lib/authBootstrap"`.
-
-## Arquivos NÃO alterados
-
-- Migrations, Edge Functions, RLS.
-- `DynamicFieldFilters.tsx`, `CheckinOperatorPage.tsx`, `CheckinLoginPage.tsx`, `AdminLayout.tsx`.
-- Qualquer outra página ou componente.
+1. Selecionar "ÁREA DE CONG. A QUE PERTENCE" → "ÁREA 7" → lista deve mostrar somente os participantes da Área 7 e o contador refletir esse total.
+2. Combinar com outros filtros (DEPARTAMENTO, FUNÇÃO MINISTERIAL) → devem se aplicar em conjunto (AND).
+3. Busca textual + filtro dinâmico simultâneos → ambos atuam.
+4. Paginação navega corretamente sobre o resultado filtrado.
+5. Check-in via QR e manual seguem funcionando, atualizam a lista.
