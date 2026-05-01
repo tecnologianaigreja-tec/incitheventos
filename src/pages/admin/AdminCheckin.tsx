@@ -31,12 +31,69 @@ function maskCpf(cpf: string): string {
 
 export default function AdminCheckin() {
   const [scannerActive, setScannerActive] = useState(false);
+  const [scannerStarting, setScannerStarting] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [searchResults, setSearchResults] = useState<RegistrationData[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [result, setResult] = useState<{ reg: RegistrationData; status: "success" | "already" | "error" | "not_found" | "not_paid" } | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
+  // Per-token cooldown to ignore the same QR being read repeatedly while in front of the camera
+  const lastScannedRef = useRef<Map<string, number>>(new Map());
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const resultClearTimerRef = useRef<number | null>(null);
+
+  function ensureAudio() {
+    if (!audioCtxRef.current) {
+      try {
+        const Ctx = (window.AudioContext || (window as any).webkitAudioContext);
+        if (Ctx) audioCtxRef.current = new Ctx();
+      } catch {}
+    }
+    // Resume on user gesture (iOS)
+    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+  }
+
+  function playTone(freq: number, durationMs: number, delayMs = 0) {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const start = ctx.currentTime + delayMs / 1000;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.25, start + 0.01);
+    gain.gain.linearRampToValueAtTime(0, start + durationMs / 1000);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + durationMs / 1000 + 0.02);
+  }
+
+  function playBeep(kind: "success" | "warning" | "error") {
+    ensureAudio();
+    if (!audioCtxRef.current) return;
+    if (kind === "success") {
+      playTone(880, 140);
+    } else if (kind === "warning") {
+      playTone(600, 90, 0);
+      playTone(600, 90, 130);
+    } else {
+      playTone(220, 220);
+    }
+  }
+
+  function scheduleResultClear(ms: number) {
+    if (resultClearTimerRef.current) {
+      window.clearTimeout(resultClearTimerRef.current);
+    }
+    resultClearTimerRef.current = window.setTimeout(() => {
+      setResult(null);
+      resultClearTimerRef.current = null;
+    }, ms);
+  }
 
   // Checked-in list + filters
   const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
