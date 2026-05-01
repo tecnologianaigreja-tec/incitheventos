@@ -798,12 +798,20 @@ export default function EventsListPage() {
       <footer className="border-t border-border/60 bg-card px-4 py-8">
         <div className="container mx-auto max-w-4xl flex flex-col items-center justify-between gap-3 sm:flex-row">
           <p className="text-sm text-muted-foreground">{footerText}</p>
-          <Link
-            to="/admin/login"
-            className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          >
-            Administrativo
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/checkin/login"
+              className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+            >
+              Check-in
+            </Link>
+            <Link
+              to="/admin/login"
+              className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+            >
+              Administrativo
+            </Link>
+          </div>
         </div>
       </footer>
 
