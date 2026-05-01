@@ -21,6 +21,8 @@ import AdminCertificates from "./pages/admin/AdminCertificates";
 import AdminExport from "./pages/admin/AdminExport";
 import AdminSiteSettings from "./pages/admin/AdminSiteSettings";
 import AdminLabelEditor from "./pages/admin/AdminLabelEditor";
+import CheckinLoginPage from "./pages/CheckinLoginPage";
+import CheckinOperatorPage from "./pages/CheckinOperatorPage";
 import NotFound from "./pages/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -42,6 +44,8 @@ const App = () => (
           <Route path="/certificado/validar" element={<CertificateValidationPage />} />
           <Route path="/certificado/validar/:code" element={<CertificateValidationPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
+          <Route path="/checkin/login" element={<CheckinLoginPage />} />
+          <Route path="/checkin" element={<CheckinOperatorPage />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
             <Route path="eventos" element={<AdminEvents />} />

@@ -10,34 +10,71 @@ import { toast } from "sonner";
 import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
+import { applyDynamicFiltersToQuery } from "@/lib/dynamicFilterQuery";
 import AdminPagination from "@/components/admin/AdminPagination";
 
 const PAGE_SIZE = 50;
 
+// Always-available filter fields (even if event has no custom form fields).
+const FIXED_FILTER_FIELDS: EventFormField[] = [
+  { id: "fixed-area", event_id: "", field_label: "Área", field_key: "area", field_type: "text", is_required: false, placeholder: null, options: [], sort_order: -4, is_active: true, created_at: "", updated_at: "" },
+  { id: "fixed-congregation", event_id: "", field_label: "Congregação", field_key: "congregation", field_type: "text", is_required: false, placeholder: null, options: [], sort_order: -3, is_active: true, created_at: "", updated_at: "" },
+  { id: "fixed-church_role", event_id: "", field_label: "Cargo", field_key: "church_role", field_type: "text", is_required: false, placeholder: null, options: [], sort_order: -2, is_active: true, created_at: "", updated_at: "" },
+  { id: "fixed-church_function", event_id: "", field_label: "Função", field_key: "church_function", field_type: "text", is_required: false, placeholder: null, options: [], sort_order: -1, is_active: true, created_at: "", updated_at: "" },
+];
+
+function maskCpf(cpf: string): string {
+  const d = (cpf || "").replace(/\D/g, "");
+  if (d.length !== 11) return cpf || "";
+  return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
+}
+
 export default function AdminCheckin() {
   const [scannerActive, setScannerActive] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<RegistrationData[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [result, setResult] = useState<{ reg: RegistrationData; status: "success" | "already" | "error" | "not_found" | "not_paid" } | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
 
   // Checked-in list + filters
   const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
-  const [customFields, setCustomFields] = useState<EventFormField[]>([]);
+  const [customFields, setCustomFields] = useState<EventFormField[]>(FIXED_FILTER_FIELDS);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [searchCheckedIn, setSearchCheckedIn] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Debounce search
+  // Debounce search of checked-in list
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchCheckedIn.trim()), 300);
     return () => clearTimeout(t);
   }, [searchCheckedIn]);
 
-  // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [debouncedSearch]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, dynamicFilters]);
+
+  // Load custom fields from ALL events once, so filters always include cargo/área/etc.
+  useEffect(() => {
+    async function loadFields() {
+      const { data } = await supabase
+        .from("event_form_fields")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order");
+      const seen = new Set<string>(FIXED_FILTER_FIELDS.map(f => f.field_key));
+      const merged: EventFormField[] = [...FIXED_FILTER_FIELDS];
+      for (const f of (data || []) as unknown as EventFormField[]) {
+        if (!seen.has(f.field_key)) {
+          seen.add(f.field_key);
+          merged.push(f);
+        }
+      }
+      setCustomFields(merged);
+    }
+    loadFields();
+  }, []);
 
   const loadCheckedIn = useCallback(async () => {
     const from = (page - 1) * PAGE_SIZE;
@@ -54,122 +91,30 @@ export default function AdminCheckin() {
       query = query.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
     }
 
+    // Apply dynamic filters server-side so total + pagination reflect them
+    query = applyDynamicFiltersToQuery(query, dynamicFilters);
+
     const { data, count } = await query.range(from, to);
     const regs = (data || []) as unknown as RegistrationData[];
     setCheckedIn(regs);
     setTotalCount(count || 0);
-
-    // Load custom fields for filtering (based on the visible page)
-    if (regs.length > 0) {
-      const eventIds = [...new Set(regs.map(r => r.event_id))];
-      const { data: fields } = await supabase
-        .from("event_form_fields")
-        .select("*")
-        .in("event_id", eventIds)
-        .eq("is_active", true)
-        .order("sort_order");
-      if (fields) {
-        const seen = new Set<string>();
-        const unique: EventFormField[] = [];
-        for (const f of fields as unknown as EventFormField[]) {
-          if (!seen.has(f.field_key)) {
-            seen.add(f.field_key);
-            unique.push(f);
-          }
-        }
-        setCustomFields(unique);
-      }
-    }
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, dynamicFilters]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
 
-  const processCheckin = useCallback(async (token: string) => {
-    if (processingRef.current) return;
-    processingRef.current = true;
-
-    try {
-      const { data: reg } = await supabase
-        .from("registrations")
-        .select("*")
-        .eq("qr_token", token.trim())
-        .single();
-
-      if (!reg) {
-        setResult({ reg: null as any, status: "not_found" });
-        toast.error("QR Code inválido");
-        return;
-      }
-
-      const registration = reg as unknown as RegistrationData;
-
-      if (registration.payment_status !== "approved") {
-        setResult({ reg: registration, status: "not_paid" });
-        toast.error("Pagamento não aprovado");
-        return;
-      }
-
-      if (registration.checkin_status === "checked_in") {
-        setResult({ reg: registration, status: "already" });
-        toast.warning("Participante já registrado");
-        return;
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const { error } = await supabase.from("registrations").update({
-        checkin_status: "checked_in",
-        checkin_at: new Date().toISOString(),
-        checkin_by_user_id: user?.id,
-      }).eq("id", registration.id);
-
-      if (error) {
-        setResult({ reg: registration, status: "error" });
-        toast.error("Erro no check-in");
-        return;
-      }
-
-      await supabase.from("checkin_logs").insert({
-        registration_id: registration.id,
-        action_type: "scan",
-        checked_by_user_id: user?.id,
-      });
-
-      setResult({ reg: { ...registration, checkin_status: "checked_in", checkin_at: new Date().toISOString() }, status: "success" });
-      toast.success(`Check-in de ${registration.full_name} realizado!`);
-      loadCheckedIn();
-    } finally {
-      setTimeout(() => { processingRef.current = false; }, 2000);
-    }
-  }, [loadCheckedIn]);
-
-  async function handleManualSearch() {
-    if (!manualSearch.trim()) return;
-
-    const { data } = await supabase
-      .from("registrations")
-      .select("*")
-      .or(`full_name.ilike.%${manualSearch}%,email.ilike.%${manualSearch}%,registration_code.eq.${manualSearch}`)
-      .limit(1)
-      .single();
-
-    if (!data) {
-      setResult({ reg: null as any, status: "not_found" });
-      toast.error("Participante não encontrado");
-      return;
-    }
-
-    const registration = data as unknown as RegistrationData;
-
-    if (registration.checkin_status === "checked_in") {
-      setResult({ reg: registration, status: "already" });
-      toast.warning("Participante já registrado");
-      return;
-    }
-
+  /**
+   * Performs the actual check-in mutation. Used by QR scan, token paste,
+   * and the "Confirmar check-in" button on each search result card.
+   */
+  const confirmCheckin = useCallback(async (registration: RegistrationData, action: "scan" | "manual" = "manual") => {
     if (registration.payment_status !== "approved") {
       setResult({ reg: registration, status: "not_paid" });
       toast.error("Pagamento não aprovado");
+      return;
+    }
+    if (registration.checkin_status === "checked_in") {
+      setResult({ reg: registration, status: "already" });
+      toast.warning("Participante já registrado");
       return;
     }
 
@@ -188,13 +133,70 @@ export default function AdminCheckin() {
 
     await supabase.from("checkin_logs").insert({
       registration_id: registration.id,
-      action_type: "manual",
+      action_type: action,
       checked_by_user_id: user?.id,
     });
 
-    setResult({ reg: { ...registration, checkin_status: "checked_in", checkin_at: new Date().toISOString() }, status: "success" });
+    const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: new Date().toISOString() };
+    setResult({ reg: updated, status: "success" });
     toast.success(`Check-in de ${registration.full_name} realizado!`);
+
+    // Reflect in the search list, if visible
+    setSearchResults(prev => prev ? prev.map(r => r.id === registration.id ? updated : r) : prev);
+
     loadCheckedIn();
+  }, [loadCheckedIn]);
+
+  const processCheckinByToken = useCallback(async (token: string) => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    try {
+      const { data: reg } = await supabase
+        .from("registrations")
+        .select("*")
+        .eq("qr_token", token.trim())
+        .single();
+
+      if (!reg) {
+        setResult({ reg: null as any, status: "not_found" });
+        toast.error("QR Code inválido");
+        return;
+      }
+      await confirmCheckin(reg as unknown as RegistrationData, "scan");
+    } finally {
+      setTimeout(() => { processingRef.current = false; }, 2000);
+    }
+  }, [confirmCheckin]);
+
+  // NEW: search returns a LIST so the operator can pick the right person
+  async function handleManualSearch() {
+    const term = manualSearch.trim();
+    if (!term) {
+      setSearchResults(null);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const escaped = term.replace(/[%,]/g, "");
+      const { data, error } = await supabase
+        .from("registrations")
+        .select("*")
+        .or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,registration_code.ilike.%${escaped}%,cpf.ilike.%${escaped}%`)
+        .order("full_name", { ascending: true })
+        .limit(25);
+
+      if (error) {
+        toast.error("Erro ao buscar inscrições");
+        setSearchResults([]);
+        return;
+      }
+      setSearchResults((data || []) as unknown as RegistrationData[]);
+      if (!data || data.length === 0) {
+        toast.info("Nenhum inscrito encontrado");
+      }
+    } finally {
+      setSearchLoading(false);
+    }
   }
 
   async function startScanner() {
@@ -204,7 +206,7 @@ export default function AdminCheckin() {
       await scanner.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => { processCheckin(decodedText); },
+        (decodedText) => { processCheckinByToken(decodedText); },
         () => {}
       );
       setScannerActive(true);
@@ -223,8 +225,8 @@ export default function AdminCheckin() {
 
   useEffect(() => { return () => { stopScanner(); }; }, []);
 
-  // Dynamic filters apply over the current page only (visual only — informative for admins)
-  const filteredCheckedIn = applyDynamicFilters(checkedIn, dynamicFilters);
+  // Filtered list of checked-in (server already applied filters; this is just defensive for UI search of checked-in list)
+  const filteredCheckedIn = applyDynamicFilters(checkedIn, []);
 
   return (
     <div className="space-y-6">
@@ -239,23 +241,12 @@ export default function AdminCheckin() {
             </div>
             <div>
               <p className="text-2xl font-bold text-foreground">{totalCount}</p>
-              <p className="text-xs text-muted-foreground">Total presentes</p>
+              <p className="text-xs text-muted-foreground">
+                {dynamicFilters.length > 0 ? "Presentes (filtro aplicado)" : "Total presentes"}
+              </p>
             </div>
           </CardContent>
         </Card>
-        {dynamicFilters.length > 0 && (
-          <Card>
-            <CardContent className="flex items-center gap-4 p-6">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20">
-                <CheckCircle className="h-6 w-6 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{filteredCheckedIn.length}</p>
-                <p className="text-xs text-muted-foreground">Filtro ativo</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       {/* QR Scanner */}
@@ -277,21 +268,64 @@ export default function AdminCheckin() {
         </CardContent>
       </Card>
 
-      {/* Manual search */}
+      {/* Manual search (lists results — does NOT auto check-in) */}
       <Card>
-        <CardContent className="p-6">
+        <CardContent className="p-6 space-y-4">
           <div className="flex gap-2">
             <Input
-              placeholder="Buscar por nome, e-mail ou código de inscrição"
+              placeholder="Buscar por nome, e-mail, CPF ou código de inscrição"
               value={manualSearch}
               onChange={e => setManualSearch(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleManualSearch()}
               className="flex-1"
             />
-            <Button onClick={handleManualSearch} className="gap-2">
-              <Search className="h-4 w-4" /> Buscar
+            <Button onClick={handleManualSearch} disabled={searchLoading} className="gap-2">
+              <Search className="h-4 w-4" /> {searchLoading ? "Buscando..." : "Buscar"}
             </Button>
           </div>
+
+          {searchResults !== null && (
+            <div className="space-y-2">
+              {searchResults.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum inscrito encontrado para esta busca.</p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    {searchResults.length} resultado{searchResults.length !== 1 ? "s" : ""} — selecione quem deseja registrar:
+                  </p>
+                  {searchResults.map(r => {
+                    const paid = r.payment_status === "approved";
+                    const present = r.checkin_status === "checked_in";
+                    return (
+                      <div key={r.id} className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-foreground truncate">{r.full_name}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {r.email} · CPF {maskCpf(r.cpf)} · Cód. {r.registration_code}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge variant={paid ? "default" : "destructive"}>{paid ? "Pago" : "Não pago"}</Badge>
+                            <Badge variant={present ? "secondary" : "outline"}>
+                              {present ? `Presente${r.checkin_at ? ` em ${new Date(r.checkin_at).toLocaleString("pt-BR")}` : ""}` : "Não registrado"}
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={!paid || present}
+                          onClick={() => confirmCheckin(r, "manual")}
+                          className="gap-2 sm:self-center"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                          {present ? "Já presente" : !paid ? "Sem pagamento" : "Confirmar check-in"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -303,7 +337,7 @@ export default function AdminCheckin() {
             placeholder="Cole o token do QR Code aqui"
             onKeyDown={async (e) => {
               if (e.key === "Enter") {
-                await processCheckin((e.target as HTMLInputElement).value);
+                await processCheckinByToken((e.target as HTMLInputElement).value);
                 (e.target as HTMLInputElement).value = "";
               }
             }}
@@ -379,7 +413,6 @@ export default function AdminCheckin() {
             </Badge>
           </div>
 
-          {/* Search + Dynamic filters for checked-in */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -390,17 +423,15 @@ export default function AdminCheckin() {
             />
           </div>
 
-          {customFields.length > 0 && (
-            <DynamicFieldFilters
-              customFields={customFields}
-              activeFilters={dynamicFilters}
-              onFiltersChange={setDynamicFilters}
-            />
-          )}
+          <DynamicFieldFilters
+            customFields={customFields}
+            activeFilters={dynamicFilters}
+            onFiltersChange={setDynamicFilters}
+          />
 
           {filteredCheckedIn.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
-              {totalCount === 0 ? "Nenhum check-in realizado ainda" : "Nenhum resultado para os filtros aplicados"}
+              {totalCount === 0 ? "Nenhum check-in para os critérios atuais" : "Nenhum resultado nesta página"}
             </p>
           ) : (
             <>
