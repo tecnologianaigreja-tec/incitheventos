@@ -436,8 +436,8 @@ export default function AdminCheckin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Filtered list of checked-in (server already applied filters; this is just defensive for UI search of checked-in list)
-  const filteredCheckedIn = applyDynamicFilters(checkedIn, []);
+  // `checkedIn` is already the filtered + paginated slice from loadCheckedIn().
+  const filteredCheckedIn = checkedIn;
 
   return (
     <div className="space-y-6">
