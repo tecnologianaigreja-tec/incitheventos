@@ -1,87 +1,83 @@
-## Problem
+# Melhorias no Check-in + Acesso Restrito de Operador
 
-In "Consultar minhas inscrições" → click **Pagar** on an unpaid registration, the user is taken back to the registration form ("preencher os dados novamente") instead of the InfinitePay checkout link.
+Três melhorias, sem quebrar nada do que já funciona (câmera/QR, manual, lista de presentes, painel admin completo).
 
-## Root cause (confirmed)
+---
 
-This is the same underlying bug as the previous report. The Edge Function logs for `create-checkout` show InfinitePay returning **HTTP 422**:
+## 1) Busca por nome/e-mail/código deve LISTAR resultados (não fazer check-in direto)
 
-```
-"customer":{"email":["must be filled"]}
-```
+**Hoje:** ao clicar em "Buscar", o sistema pega o primeiro resultado e já marca check-in. Isso causa check-ins equivocados quando há nomes parecidos.
 
-with payload `"customer":{"name":"MARINHO ...","email":""}`.
+**Novo comportamento em `src/pages/admin/AdminCheckin.tsx`:**
 
-Sequence:
+- "Buscar" passa a executar uma consulta `.ilike` em `full_name`, `email` e `registration_code`, retornando até ~20 resultados (ordenados por nome).
+- Os resultados aparecem em uma **lista de cards** logo abaixo do campo de busca, mostrando para cada inscrição:
+  - Nome, e-mail, CPF (mascarado), código de inscrição
+  - Badge de status de pagamento (Pago / Não pago)
+  - Badge de check-in (Presente / Não registrado) com horário, se já feito
+  - Botão **"Confirmar check-in"** (desabilitado se não estiver pago ou se já estiver presente)
+- Só ao clicar em "Confirmar check-in" do card escolhido o sistema executa a marcação (mesma lógica que já existe em `handleManualSearch`, extraída para uma função única `confirmCheckin(registration)`).
+- A leitura por câmera (QR) e o campo "Inserir token do QR Code manualmente" continuam funcionando exatamente como hoje (check-in imediato, pois o QR já identifica unicamente).
 
-1. The participant form has e-mail as **optional** (`RegistrationPage.tsx` ~line 218: `placeholder="seu@email.com (opcional)"`).
-2. User submits without an e-mail → `create-checkout` calls InfinitePay with empty `customer.email` → InfinitePay rejects with 422 → `generatePaymentLink` returns `null` → the order row is created with `payment_link = NULL`.
-3. Later, in `EventsListPage.tsx` (lines 540-545), the "Pagar" button does:
-   ```ts
-   if (order.payment_link) window.location.href = order.payment_link;
-   else navigate(`/evento/${slug}/inscricao`);  // ← falls back to the form
-   ```
-   Since `payment_link` is `NULL`, it sends the user back to the form. That's the symptom the user is seeing.
+---
 
-So the visible bug ("leva para preencher os dados de novo") is caused by the *missing* payment link, not by the "Pagar" button being wrong.
+## 2) Filtros encadeados (campo + valor) na lista de "Participantes presentes"
 
-## Fix (two layers — preventive + recovery)
+Já existe o componente `DynamicFieldFilters` (com Select de campo → Select/Popover de valores). Ele já é usado em `AdminCheckin`, mas hoje filtra apenas a página visível (50 registros).
 
-### 1. Make buyer e-mail required (preventive) — same as previous fix
+**Mudanças:**
 
-`src/pages/RegistrationPage.tsx`:
+- Manter o componente atual (campo → valores), que já entrega exatamente o pedido: "filtrar cargos → aparece a lista de cargos", "filtrar área → aparece a lista de áreas", etc.
+- Carregar os `event_form_fields` de **todos os eventos** (não só os da página atual) para que o seletor de campos sempre traga Cargo, Função, Área, Congregação e demais campos personalizados disponíveis.
+- Aplicar os filtros **no servidor** (via `applyDynamicFiltersToQuery`, que já existe em `src/lib/dynamicFilterQuery.ts`) dentro de `loadCheckedIn`, para que:
+  - O **contador "Total presentes"** reflita o filtro aplicado.
+  - A paginação funcione corretamente sobre o conjunto filtrado.
+- Adicionar campos fixos conhecidos (Cargo/Função/Área/Congregação) à lista do seletor mesmo quando o evento não os tiver como custom field, para garantir que esses filtros estejam sempre disponíveis.
 
-- **Individual flow**: require + validate `email` (treat the participant as the buyer).
-- **Batch flow, buyer is participant**: require + validate `email` on the buyer.
-- **Batch flow, buyer is NOT participant** (`BuyerOnlySection`): add an **E-mail** input and require + validate it.
-- Keep `email` optional for non-buyer batch participants (current behavior).
-- Update labels: drop "(opcional)" when the field belongs to the buyer.
+---
 
-`supabase/functions/create-checkout/index.ts`:
+## 3) Botão "Check-in" na home + login restrito do operador
 
-- After computing `buyer_email`, if it is empty or invalid, return **HTTP 400** with `"E-mail do responsável é obrigatório para o pagamento."` instead of letting the InfinitePay request fail silently with 422.
+**Na `src/pages/EventsListPage.tsx`:** adicionar, ao lado do link "Administrativo" do rodapé, um segundo link discreto **"Check-in"** apontando para `/checkin/login`.
 
-### 2. Regenerate the payment link on demand (recovery) — fixes existing broken orders
+**Nova rota pública `/checkin/login`** (`src/pages/CheckinLoginPage.tsx`):
+- Página de login simples (mesmo padrão visual do admin login, mas com texto "Acesso da equipe de Check-in").
+- Faz `supabase.auth.signInWithPassword({ email, password })`.
+- Após autenticar, valida em `admin_users` que o `role` é `checkin_operator`, `admin` ou `superadmin`. Se não for, faz signOut e mostra erro.
+- Em caso de sucesso, redireciona para `/checkin`.
 
-This is essential because there are already orders in the DB with `payment_link = NULL` from previous failed attempts. We must NOT send those users back to the form.
+**Nova rota protegida `/checkin`** (`src/pages/CheckinOperatorPage.tsx`):
+- Layout enxuto (header com título "Check-in", nome do operador e botão Sair). **Sem sidebar do admin**, sem links para Pedidos/Inscritos/Financeiro/etc.
+- Verifica sessão + role em `admin_users` (qualquer role autorizado acima). Se não autorizado, redireciona para `/checkin/login`.
+- Renderiza o **mesmo componente `AdminCheckin`** (já com as melhorias 1 e 2), garantindo paridade total de funcionalidade e zero duplicação de lógica.
 
-`supabase/functions/create-checkout/index.ts` — extend the existing **resume path** (currently only triggers when re-submitting the form for the same single CPF) so it can also be invoked by a "regenerate link" call. Concretely, accept an alternative payload shape:
+**Criação do usuário operador (`conferencia@gmail.com` / `conferencia33`):**
+- Edge function única e idempotente `seed-checkin-operator` (chamada uma vez), que:
+  1. Verifica se já existe usuário com esse e-mail em `auth.users` (via `admin.listUsers` / `getUserByEmail`).
+  2. Se não existir, cria com `admin.createUser({ email, password, email_confirm: true })`.
+  3. Faz `upsert` em `admin_users` com `role = 'checkin_operator'` e `name = 'Equipe Check-in'`.
+- Usa `SUPABASE_SERVICE_ROLE_KEY` (já disponível no ambiente das edge functions).
 
-```json
-{ "regenerate_for_order_id": "<uuid>" }
-```
+**RLS / segurança:**
+- O role `checkin_operator` já existe no enum `admin_role`.
+- Revisar políticas atuais para garantir que esse role só consiga: ler `registrations` e `events`, e atualizar `checkin_status/checkin_at/checkin_by_user_id` em `registrations`, além de inserir em `checkin_logs`. **Sem acesso** a `orders`, dados financeiros, ou `site_settings`.
+- Se alguma policy hoje exige `role IN ('admin','superadmin')`, ampliar para incluir `'checkin_operator'` apenas nas operações estritamente necessárias acima.
 
-When this is provided:
-- Look up the order, its event, and its registrations.
-- Reject if `payment_status !== "pending"`.
-- If `payment_link` exists, return it.
-- Otherwise call `generatePaymentLink(...)` exactly like the normal flow, persist `payment_link` on the order, and return `{ order_code, payment_link }`.
-- If the buyer e-mail on the existing order is empty/invalid (legacy data), return 400 with a clear message asking the user to update via support — InfinitePay still won't accept an empty email even on retry.
+---
 
-`src/pages/EventsListPage.tsx` (the "Pagar" button, ~lines 483-545):
-
-Replace the current "if no link → navigate to form" fallback with:
+## Resumo dos arquivos
 
 ```text
-if order.payment_link → redirect to it
-else
-  call create-checkout with { regenerate_for_order_id: r.order_id }
-  if it returns a payment_link → redirect
-  else → toast the returned error message (do NOT bounce to the form)
+Editar:
+  src/pages/admin/AdminCheckin.tsx     # busca lista resultados; filtros server-side
+  src/pages/EventsListPage.tsx          # link "Check-in" no rodapé
+  src/App.tsx                            # rotas /checkin/login e /checkin
+
+Criar:
+  src/pages/CheckinLoginPage.tsx
+  src/pages/CheckinOperatorPage.tsx
+  supabase/functions/seed-checkin-operator/index.ts
+  supabase/migrations/<timestamp>_checkin_operator_policies.sql  # se necessário ampliar RLS
 ```
 
-For the **batch** branch, behavior stays the same (the split-batch-payment flow already regenerates its own per-participant link). Only the **individual** branch (line 540-545) changes.
-
-### 3. No DB / RLS / migration changes
-
-Pure code-level fix. `payment_link` is already nullable on `orders`.
-
-## What stays the same (no regressions)
-
-- Order code, registration code, NSU, audit logs, webhook, reconcile poller, OrderStatusPage polling, batch split flow, CPF uniqueness, pending-resume on re-submit, "Aguardando pagamento" page, all admin tabs (Inscritos filter + material delivered toggle), label printing, dynamic filters — all untouched.
-
-## Files to modify
-
-- `src/pages/RegistrationPage.tsx` — make buyer e-mail required (individual + batch buyer + buyer-only section); add e-mail input to `BuyerOnlySection`.
-- `supabase/functions/create-checkout/index.ts` — server-side guard for empty/invalid buyer e-mail; new `regenerate_for_order_id` branch that re-creates the InfinitePay link for an existing pending order.
-- `src/pages/EventsListPage.tsx` — in the individual "Pagar" button, when `payment_link` is missing, call `create-checkout` with `regenerate_for_order_id` and redirect to the returned link (instead of sending the user back to the form).
+Nada do fluxo atual (admin, pagamento InfinitePay, leitura por QR, lista de presentes, exportações) é alterado em comportamento — só evoluído.
