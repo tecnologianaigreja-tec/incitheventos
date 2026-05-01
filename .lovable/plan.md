@@ -1,63 +1,60 @@
-## Objetivo
-Tornar o check-in por câmera prático e contínuo: ao ler o QR Code, **salvar a presença, emitir um beep, mostrar feedback visual rápido e manter a câmera ativa** para o próximo participante. Se o mesmo QR for lido de novo, avisar "já registrado" (com beep diferente) e continuar pronto para o próximo.
+## Diagnóstico dos dois erros do print
 
-## Problemas atuais (em `src/pages/admin/AdminCheckin.tsx`)
+### 1. `'facingMode' should be string or object with exact as key` → "Não foi possível acessar a câmera"
 
-1. **Preview da câmera não aparece no celular** — o container `#qr-reader` fica `hidden` até `scannerActive=true`, mas isso só acontece **depois** que `Html5Qrcode.start()` resolve. O elemento tem `0x0` quando a lib injeta o `<video>`, e em iOS/Android o vídeo fica invisível. Falta também `playsInline` no `<video>`.
-2. **Sem feedback sonoro** — não há beep quando o check-in é registrado.
-3. **Sem proteção contra leitura repetida** — o `processingRef` tem janela de 2s, mas não distingue "mesmo QR escaneado várias vezes" de "QRs diferentes". E não há cooldown por token.
-4. **Câmera não continua ativa de forma fluida** — após ler, o `result` aparece e a câmera continua, mas o `processingRef` de 2s pode bloquear leituras válidas seguintes em filas movimentadas. Falta um auto-clear do `result` para limpar a tela e ficar pronto para o próximo.
+A biblioteca `html5-qrcode` **não aceita** `{ ideal: "environment" }`. A API dela só permite:
+- string: `"environment"` ou `"user"`
+- objeto: `{ exact: "environment" }`
 
-## Mudanças (apenas em `src/pages/admin/AdminCheckin.tsx`)
+Hoje em `src/pages/admin/AdminCheckin.tsx` (linha 364) chamamos `tryStart(scanner, { facingMode: { ideal: "environment" } })`. A primeira tentativa falha com erro de validação (não é `OverconstrainedError`/`NotFoundError`), então o `catch` re-lança e cai no toast genérico "Não foi possível acessar a câmera". Isso é puramente um bug de configuração — a câmera nem chega a ser solicitada.
 
-### 1. Corrigir preview da câmera no mobile
-- Novo estado `scannerStarting`. Renderizar o container `<div id="qr-reader">` sempre que `scannerActive || scannerStarting`, com classes `w-full max-w-sm aspect-square mx-auto rounded-lg overflow-hidden bg-muted relative` — assim ele já tem dimensões antes de `start`.
-- Fluxo de `startScanner`:
-  1. `setScannerStarting(true)`
-  2. `await new Promise(r => requestAnimationFrame(() => r(null)))` (garante DOM pintado)
-  3. instanciar `Html5Qrcode("qr-reader")`
-  4. chamar `start({ facingMode: { ideal: "environment" } }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScan, () => {})`
-  5. após resolver, localizar `<video>` filho de `#qr-reader` e setar `playsInline=true`, `muted=true`, estilos `width:100%; height:100%; object-fit:cover`
-  6. `setScannerActive(true)`, `setScannerStarting(false)`
-- Tratamento de erros específicos: `NotAllowedError`, `NotFoundError`, `NotReadableError`, `OverconstrainedError` (com fallback para `facingMode: "user"`).
-- Overlay com spinner enquanto `scannerStarting`.
+### 2. `AuthApiError: Invalid Refresh Token: Refresh Token Not Found` (400 em `/auth/v1/token?grant_type=refresh_token`)
 
-### 2. Beep sonoro
-- Nova função `playBeep(kind: "success" | "warning" | "error")` usando **Web Audio API** (sem assets externos):
-  - `success`: tom curto agudo (ex.: 880 Hz, 120 ms) — uma nota.
-  - `warning`: dois tons médios curtos (ex.: 600 Hz, 80 ms × 2) — para "já registrado".
-  - `error`: tom grave curto (ex.: 220 Hz, 200 ms) — para QR inválido / não pago.
-- Usar `AudioContext` lazy criado no primeiro clique de "Abrir Câmera" (gesto do usuário desbloqueia áudio em iOS).
+O `localStorage` tem uma sessão antiga do Supabase cujo refresh token foi invalidado (provavelmente por logout em outra aba, expiração no servidor, ou recriação do projeto). Como `autoRefreshToken: true`, o cliente tenta renovar no carregamento da página e recebe 400. Hoje **não tratamos esse evento**, então o erro fica visível no console e a sessão permanece "fantasma" no storage.
 
-### 3. Anti-duplicata e fluxo contínuo
-- Trocar `processingRef` por:
-  - `lastScannedRef` (Map<string, number>): guarda `qr_token → timestamp` do último scan, com cooldown de **3 segundos** por token. Se o mesmo token vier de novo dentro de 3s, ignora silenciosamente (sem reprocessar nem mostrar feedback redundante).
-  - `processingRef` (boolean): mantém para evitar duas chamadas em paralelo.
-- Em `processCheckinByToken`:
-  - Verifica cooldown por token; se dentro da janela, retorna sem fazer nada.
-  - Busca a registration pelo token.
-  - Se não encontrada → `playBeep("error")`, mostra `result`, agenda auto-clear.
-  - Se já `checked_in` → `playBeep("warning")`, `result.status = "already"`, agenda auto-clear.
-  - Se não pago → `playBeep("error")`, `result.status = "not_paid"`, agenda auto-clear.
-  - Se sucesso → `playBeep("success")`, `result.status = "success"`, agenda auto-clear.
-- **Câmera permanece ativa** durante todo o ciclo — não chamamos `stopScanner` após o scan.
+---
 
-### 4. Auto-clear do feedback (volta ao "pronto")
-- `useEffect` que, quando `result` muda, agenda `setTimeout` de **2,5 s** para limpar `result` (ou 4 s para erro/not_found para dar tempo de ler).
-- Isso libera visualmente a tela para o próximo scan, mantendo a câmera apontada.
+## Mudanças propostas
 
-### 5. Validações no banco (defesa em profundidade)
-- Continuamos checando `payment_status = 'approved'` e `checkin_status !== 'checked_in'` antes do UPDATE. A RLS já permite ao `checkin_operator` fazer o UPDATE. Sem mudanças de schema.
+### A) `src/pages/admin/AdminCheckin.tsx` — corrigir startup da câmera
 
-### 6. Sem regressões
-- Busca manual, lista de presentes, filtros, paginação, login do operador, rotas e RLS permanecem intactos.
-- Cleanup no unmount continua chamando `stopScanner`.
-- Botão "Parar Câmera" continua funcionando manualmente.
+Trocar a estratégia de `facingMode` para algo que a `html5-qrcode` aceite e que funcione tanto no celular (traseira) quanto no desktop (qualquer câmera):
 
-## Arquivo modificado
-- `src/pages/admin/AdminCheckin.tsx` (estado novo, `startScanner`/`stopScanner`, `processCheckinByToken`, `confirmCheckin`, JSX da câmera e do feedback).
+1. **1ª tentativa:** `tryStart(scanner, { facingMode: "environment" })` — string simples, válida pela lib, pede câmera traseira no celular.
+2. **2ª tentativa (fallback se falhar com `OverconstrainedError` ou `NotFoundError`):** `tryStart(scanner, { facingMode: "user" })` — câmera frontal/única (cobre desktops/laptops sem câmera traseira).
+3. **3ª tentativa (último recurso):** enumerar câmeras com `Html5Qrcode.getCameras()` e iniciar pela primeira disponível por `deviceId`. Cobre dispositivos onde nenhum `facingMode` resolve.
+
+Resto do fluxo (polling do `#qr-reader`, `playsinline`/`muted`/`object-fit:cover` no `<video>`, beep, cooldown por token, auto-clear) **permanece exatamente como está**. Apenas a chamada do `facingMode` muda.
+
+### B) `src/integrations/supabase/client.ts` + tratamento global — eliminar erro de refresh token
+
+Adicionar um listener global `supabase.auth.onAuthStateChange` em um único ponto que rode no boot do app (criar `src/lib/authBootstrap.ts` e importá-lo em `src/main.tsx`). Comportamento:
+
+- Quando o evento for `TOKEN_REFRESHED` com `session === null`, ou quando ocorrer `SIGNED_OUT`, chamar `supabase.auth.signOut({ scope: 'local' })` para **limpar o storage corrompido** silenciosamente.
+- Não redirecionar nada — as páginas protegidas (`CheckinOperatorPage`, `AdminLayout`) já redirecionam pra tela de login quando `getUser()` retorna nulo, então o usuário simplesmente cai no login se estava autenticado.
+- Adicionalmente, no `client.ts`, manter `persistSession: true` mas o listener garante que tokens inválidos sejam descartados no boot, parando o loop de tentativas de refresh.
+
+Isso elimina os logs `Failed to load resource ... 400` e `AuthApiError: Invalid Refresh Token` do print sem deslogar nenhum usuário válido.
+
+---
+
+## O que NÃO muda (sem regressões)
+
+- Lógica de check-in (cooldown 3s por token, idempotência no UPDATE, `checkin_logs`, beeps success/warning/error, auto-clear do feedback).
+- Preview da câmera (container `#qr-reader` com `aspect-square`, overlay de "Iniciando câmera...", `playsinline`/`muted`).
+- Busca manual, lista de presentes, filtros dinâmicos, paginação, botão "Limpar filtros".
+- Rotas, RLS, Edge Functions, schema do banco — nada disso é tocado.
+- Login do operador (`/checkin/login`) e fluxo do admin continuam idênticos.
+
+## Arquivos modificados
+
+- `src/pages/admin/AdminCheckin.tsx` — apenas as 2 chamadas `tryStart(...)` e a adição do fallback por `getCameras()`.
+- `src/integrations/supabase/client.ts` — sem mudança estrutural; possível pequeno comentário.
+- `src/lib/authBootstrap.ts` — **novo** arquivo, ~15 linhas, com o listener `onAuthStateChange`.
+- `src/main.tsx` — uma linha de `import "./lib/authBootstrap"`.
 
 ## Arquivos NÃO alterados
-- Nenhuma migration.
-- Nenhuma edge function.
-- `DynamicFieldFilters.tsx`, `CheckinOperatorPage.tsx`, `CheckinLoginPage.tsx` permanecem como estão.
+
+- Migrations, Edge Functions, RLS.
+- `DynamicFieldFilters.tsx`, `CheckinOperatorPage.tsx`, `CheckinLoginPage.tsx`, `AdminLayout.tsx`.
+- Qualquer outra página ou componente.

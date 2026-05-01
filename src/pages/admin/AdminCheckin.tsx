@@ -360,14 +360,25 @@ export default function AdminCheckin() {
     try {
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
+      // html5-qrcode only accepts facingMode as a string ("environment"/"user")
+      // or as { exact: "environment" }. Using { ideal: ... } throws a validation error.
       try {
-        await tryStart(scanner, { facingMode: { ideal: "environment" } });
-      } catch (err: any) {
-        if (err?.name === "OverconstrainedError" || err?.name === "NotFoundError") {
-          // Fallback to any available camera
+        await tryStart(scanner, { facingMode: "environment" });
+      } catch (err1: any) {
+        console.warn("[checkin] environment camera failed, trying user camera", err1);
+        try {
           await tryStart(scanner, { facingMode: "user" });
-        } else {
-          throw err;
+        } catch (err2: any) {
+          console.warn("[checkin] user camera failed, trying enumerated cameras", err2);
+          // Last resort: enumerate cameras and pick the first available deviceId
+          const cameras = await Html5Qrcode.getCameras();
+          if (!cameras || cameras.length === 0) {
+            throw err2;
+          }
+          // Prefer a back-facing camera by label heuristic, otherwise first one
+          const back = cameras.find(c => /back|rear|environment|traseira/i.test(c.label || ""));
+          const chosen = back || cameras[0];
+          await tryStart(scanner, { deviceId: { exact: chosen.id } });
         }
       }
 
