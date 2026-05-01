@@ -399,13 +399,34 @@ export default function AdminCheckin() {
               variant={scannerActive ? "destructive" : "default"}
               size="sm"
               onClick={scannerActive ? stopScanner : startScanner}
+              disabled={scannerStarting}
               className="gap-2"
             >
-              {scannerActive ? <><CameraOff className="h-4 w-4" /> Parar Câmera</> : <><Camera className="h-4 w-4" /> Abrir Câmera</>}
+              {scannerStarting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Iniciando...</>
+              ) : scannerActive ? (
+                <><CameraOff className="h-4 w-4" /> Parar Câmera</>
+              ) : (
+                <><Camera className="h-4 w-4" /> Abrir Câmera</>
+              )}
             </Button>
           </div>
-          <div id="qr-reader" className={`mx-auto overflow-hidden rounded-lg ${scannerActive ? "w-full max-w-sm" : "hidden"}`} />
-          {scannerActive && <p className="text-center text-xs text-muted-foreground">Aponte a câmera para o QR Code do participante</p>}
+          {(scannerActive || scannerStarting) && (
+            <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-lg bg-muted">
+              <div id="qr-reader" className="absolute inset-0" />
+              {scannerStarting && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/70 backdrop-blur-sm">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">Iniciando câmera...</p>
+                </div>
+              )}
+            </div>
+          )}
+          {scannerActive && (
+            <p className="text-center text-xs text-muted-foreground">
+              Aponte a câmera para o QR Code do participante. A câmera continua ativa para o próximo.
+            </p>
+          )}
         </CardContent>
       </Card>
 
