@@ -134,27 +134,29 @@ export default function AdminCheckin() {
   }, []);
 
   const loadCheckedIn = useCallback(async () => {
+    // Fetch ALL checked-in registrations, then filter + paginate client-side.
+    // Server-side JSONB path filtering breaks for custom_fields keys with spaces/accents
+    // (e.g. "ÁREA DE CONG. A QUE PERTENCE "), so we mirror the proven approach used
+    // in AdminRegistrations.tsx via getFieldValue (which normalizes keys).
+    const all = await fetchAllPages<RegistrationData>(() => {
+      let q = supabase
+        .from("registrations")
+        .select("*")
+        .eq("checkin_status", "checked_in")
+        .order("checkin_at", { ascending: false });
+
+      if (debouncedSearch) {
+        const escaped = debouncedSearch.replace(/[%,]/g, "");
+        q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
+      }
+      return q;
+    });
+
+    const filtered = applyDynamicFilters(all as RegistrationData[], dynamicFilters);
+    setTotalCount(filtered.length);
+
     const from = (page - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let query = supabase
-      .from("registrations")
-      .select("*", { count: "exact" })
-      .eq("checkin_status", "checked_in")
-      .order("checkin_at", { ascending: false });
-
-    if (debouncedSearch) {
-      const escaped = debouncedSearch.replace(/[%,]/g, "");
-      query = query.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
-    }
-
-    // Apply dynamic filters server-side so total + pagination reflect them
-    query = applyDynamicFiltersToQuery(query, dynamicFilters);
-
-    const { data, count } = await query.range(from, to);
-    const regs = (data || []) as unknown as RegistrationData[];
-    setCheckedIn(regs);
-    setTotalCount(count || 0);
+    setCheckedIn(filtered.slice(from, from + PAGE_SIZE));
   }, [page, debouncedSearch, dynamicFilters]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
