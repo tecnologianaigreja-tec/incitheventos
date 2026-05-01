@@ -180,11 +180,20 @@ export default function AdminCheckin() {
     }
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("registrations").update({
-      checkin_status: "checked_in",
-      checkin_at: new Date().toISOString(),
-      checkin_by_user_id: user?.id,
-    }).eq("id", registration.id);
+    const checkinAt = new Date().toISOString();
+
+    // Idempotent / race-safe update: only succeeds if not yet checked in.
+    // Two concurrent operators can't both succeed.
+    const { data: updatedRows, error } = await supabase
+      .from("registrations")
+      .update({
+        checkin_status: "checked_in",
+        checkin_at: checkinAt,
+        checkin_by_user_id: user?.id,
+      })
+      .eq("id", registration.id)
+      .eq("checkin_status", "not_checked_in")
+      .select("id, checkin_at");
 
     if (error) {
       setResult({ reg: registration, status: "error" });
@@ -194,13 +203,33 @@ export default function AdminCheckin() {
       return;
     }
 
-    await supabase.from("checkin_logs").insert({
+    // No row updated → someone else already checked them in (or status changed)
+    if (!updatedRows || updatedRows.length === 0) {
+      // Re-fetch to show actual checkin_at
+      const { data: latest } = await supabase
+        .from("registrations")
+        .select("*")
+        .eq("id", registration.id)
+        .maybeSingle();
+      const reg = (latest as unknown as RegistrationData) || registration;
+      setResult({ reg: { ...reg, checkin_status: "checked_in" }, status: "already" });
+      playBeep("warning");
+      toast.warning("Participante já registrado");
+      scheduleResultClear(2500);
+      return;
+    }
+
+    // Best-effort log; surface failure to console but do not block the UX
+    const { error: logError } = await supabase.from("checkin_logs").insert({
       registration_id: registration.id,
       action_type: action,
       checked_by_user_id: user?.id,
     });
+    if (logError) {
+      console.warn("[checkin] log insert failed", logError);
+    }
 
-    const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: new Date().toISOString() };
+    const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: checkinAt };
     setResult({ reg: updated, status: "success" });
     playBeep("success");
     toast.success(`Check-in de ${registration.full_name} realizado!`);
@@ -216,11 +245,18 @@ export default function AdminCheckin() {
     const token = (rawToken || "").trim();
     if (!token) return;
 
-    // Per-token cooldown: ignore the same QR being scanned repeatedly within 3s
+    // Per-token cooldown: ignore the same QR being scanned repeatedly within 3s.
+    // Also evict old entries to avoid unbounded growth in long sessions.
     const now = Date.now();
-    const last = lastScannedRef.current.get(token) || 0;
+    const map = lastScannedRef.current;
+    const last = map.get(token) || 0;
     if (now - last < 3000) return;
-    lastScannedRef.current.set(token, now);
+    map.set(token, now);
+    if (map.size > 200) {
+      for (const [k, t] of map) {
+        if (now - t > 60000) map.delete(k);
+      }
+    }
 
     if (processingRef.current) return;
     processingRef.current = true;
@@ -295,10 +331,31 @@ export default function AdminCheckin() {
       toast.error("A câmera requer HTTPS para funcionar.");
       return;
     }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Este navegador não suporta acesso à câmera.");
+      return;
+    }
 
     setScannerStarting(true);
-    // Wait one paint so #qr-reader has real dimensions before the lib injects <video>
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    // Wait until React actually mounts the <div id="qr-reader"> in the DOM.
+    // requestAnimationFrame alone is NOT enough (React batches state → render).
+    const containerEl = await new Promise<HTMLElement | null>((resolve) => {
+      let attempts = 0;
+      const check = () => {
+        const el = document.getElementById("qr-reader");
+        if (el) { resolve(el); return; }
+        if (++attempts > 30) { resolve(null); return; } // ~500ms max
+        setTimeout(check, 16);
+      };
+      check();
+    });
+
+    if (!containerEl) {
+      setScannerStarting(false);
+      toast.error("Não foi possível inicializar o leitor de câmera.");
+      return;
+    }
 
     try {
       const scanner = new Html5Qrcode("qr-reader");
@@ -315,8 +372,7 @@ export default function AdminCheckin() {
       }
 
       // Make the injected <video> render correctly on iOS Safari and small screens
-      const container = document.getElementById("qr-reader");
-      const video = container?.querySelector("video") as HTMLVideoElement | null;
+      const video = containerEl.querySelector("video") as HTMLVideoElement | null;
       if (video) {
         video.setAttribute("playsinline", "true");
         video.muted = true;
@@ -328,6 +384,7 @@ export default function AdminCheckin() {
       setScannerActive(true);
     } catch (err: any) {
       const name = err?.name || "";
+      console.warn("[checkin] camera start failed", err);
       if (name === "NotAllowedError") {
         toast.error("Permissão de câmera negada. Habilite nas configurações do navegador.");
       } else if (name === "NotFoundError") {
