@@ -276,19 +276,72 @@ export default function AdminCheckin() {
     }
   }
 
+  async function tryStart(scanner: Html5Qrcode, constraint: any) {
+    await scanner.start(
+      constraint,
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (decodedText) => { processCheckinByToken(decodedText); },
+      () => {}
+    );
+  }
+
   async function startScanner() {
+    if (scannerActive || scannerStarting) return;
+
+    // Unlock audio (iOS) on the same user gesture
+    ensureAudio();
+
+    if (!window.isSecureContext) {
+      toast.error("A câmera requer HTTPS para funcionar.");
+      return;
+    }
+
+    setScannerStarting(true);
+    // Wait one paint so #qr-reader has real dimensions before the lib injects <video>
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
     try {
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => { processCheckinByToken(decodedText); },
-        () => {}
-      );
+      try {
+        await tryStart(scanner, { facingMode: { ideal: "environment" } });
+      } catch (err: any) {
+        if (err?.name === "OverconstrainedError" || err?.name === "NotFoundError") {
+          // Fallback to any available camera
+          await tryStart(scanner, { facingMode: "user" });
+        } else {
+          throw err;
+        }
+      }
+
+      // Make the injected <video> render correctly on iOS Safari and small screens
+      const container = document.getElementById("qr-reader");
+      const video = container?.querySelector("video") as HTMLVideoElement | null;
+      if (video) {
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        video.style.width = "100%";
+        video.style.height = "100%";
+        video.style.objectFit = "cover";
+      }
+
       setScannerActive(true);
-    } catch {
-      toast.error("Não foi possível acessar a câmera");
+    } catch (err: any) {
+      const name = err?.name || "";
+      if (name === "NotAllowedError") {
+        toast.error("Permissão de câmera negada. Habilite nas configurações do navegador.");
+      } else if (name === "NotFoundError") {
+        toast.error("Nenhuma câmera encontrada neste dispositivo.");
+      } else if (name === "NotReadableError") {
+        toast.error("Câmera em uso por outro aplicativo.");
+      } else {
+        toast.error("Não foi possível acessar a câmera.");
+      }
+      // Cleanup partially started scanner
+      try { await scannerRef.current?.stop(); } catch {}
+      scannerRef.current = null;
+    } finally {
+      setScannerStarting(false);
     }
   }
 
@@ -298,9 +351,20 @@ export default function AdminCheckin() {
       scannerRef.current = null;
     }
     setScannerActive(false);
+    setScannerStarting(false);
   }
 
-  useEffect(() => { return () => { stopScanner(); }; }, []);
+  useEffect(() => {
+    return () => {
+      stopScanner();
+      if (resultClearTimerRef.current) {
+        window.clearTimeout(resultClearTimerRef.current);
+      }
+      // Best-effort close audio context
+      try { audioCtxRef.current?.close(); } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filtered list of checked-in (server already applied filters; this is just defensive for UI search of checked-in list)
   const filteredCheckedIn = applyDynamicFilters(checkedIn, []);
