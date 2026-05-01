@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { applyDynamicFiltersToQuery } from "@/lib/dynamicFilterQuery";
@@ -31,12 +31,69 @@ function maskCpf(cpf: string): string {
 
 export default function AdminCheckin() {
   const [scannerActive, setScannerActive] = useState(false);
+  const [scannerStarting, setScannerStarting] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [searchResults, setSearchResults] = useState<RegistrationData[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [result, setResult] = useState<{ reg: RegistrationData; status: "success" | "already" | "error" | "not_found" | "not_paid" } | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
+  // Per-token cooldown to ignore the same QR being read repeatedly while in front of the camera
+  const lastScannedRef = useRef<Map<string, number>>(new Map());
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const resultClearTimerRef = useRef<number | null>(null);
+
+  function ensureAudio() {
+    if (!audioCtxRef.current) {
+      try {
+        const Ctx = (window.AudioContext || (window as any).webkitAudioContext);
+        if (Ctx) audioCtxRef.current = new Ctx();
+      } catch {}
+    }
+    // Resume on user gesture (iOS)
+    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+  }
+
+  function playTone(freq: number, durationMs: number, delayMs = 0) {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const start = ctx.currentTime + delayMs / 1000;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.25, start + 0.01);
+    gain.gain.linearRampToValueAtTime(0, start + durationMs / 1000);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + durationMs / 1000 + 0.02);
+  }
+
+  function playBeep(kind: "success" | "warning" | "error") {
+    ensureAudio();
+    if (!audioCtxRef.current) return;
+    if (kind === "success") {
+      playTone(880, 140);
+    } else if (kind === "warning") {
+      playTone(600, 90, 0);
+      playTone(600, 90, 130);
+    } else {
+      playTone(220, 220);
+    }
+  }
+
+  function scheduleResultClear(ms: number) {
+    if (resultClearTimerRef.current) {
+      window.clearTimeout(resultClearTimerRef.current);
+    }
+    resultClearTimerRef.current = window.setTimeout(() => {
+      setResult(null);
+      resultClearTimerRef.current = null;
+    }, ms);
+  }
 
   // Checked-in list + filters
   const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
@@ -109,12 +166,16 @@ export default function AdminCheckin() {
   const confirmCheckin = useCallback(async (registration: RegistrationData, action: "scan" | "manual" = "manual") => {
     if (registration.payment_status !== "approved") {
       setResult({ reg: registration, status: "not_paid" });
+      playBeep("error");
       toast.error("Pagamento não aprovado");
+      scheduleResultClear(4000);
       return;
     }
     if (registration.checkin_status === "checked_in") {
       setResult({ reg: registration, status: "already" });
+      playBeep("warning");
       toast.warning("Participante já registrado");
+      scheduleResultClear(2500);
       return;
     }
 
@@ -127,7 +188,9 @@ export default function AdminCheckin() {
 
     if (error) {
       setResult({ reg: registration, status: "error" });
+      playBeep("error");
       toast.error("Erro no check-in");
+      scheduleResultClear(4000);
       return;
     }
 
@@ -139,7 +202,9 @@ export default function AdminCheckin() {
 
     const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: new Date().toISOString() };
     setResult({ reg: updated, status: "success" });
+    playBeep("success");
     toast.success(`Check-in de ${registration.full_name} realizado!`);
+    scheduleResultClear(2500);
 
     // Reflect in the search list, if visible
     setSearchResults(prev => prev ? prev.map(r => r.id === registration.id ? updated : r) : prev);
@@ -147,24 +212,36 @@ export default function AdminCheckin() {
     loadCheckedIn();
   }, [loadCheckedIn]);
 
-  const processCheckinByToken = useCallback(async (token: string) => {
+  const processCheckinByToken = useCallback(async (rawToken: string) => {
+    const token = (rawToken || "").trim();
+    if (!token) return;
+
+    // Per-token cooldown: ignore the same QR being scanned repeatedly within 3s
+    const now = Date.now();
+    const last = lastScannedRef.current.get(token) || 0;
+    if (now - last < 3000) return;
+    lastScannedRef.current.set(token, now);
+
     if (processingRef.current) return;
     processingRef.current = true;
     try {
       const { data: reg } = await supabase
         .from("registrations")
         .select("*")
-        .eq("qr_token", token.trim())
-        .single();
+        .eq("qr_token", token)
+        .maybeSingle();
 
       if (!reg) {
         setResult({ reg: null as any, status: "not_found" });
+        playBeep("error");
         toast.error("QR Code inválido");
+        scheduleResultClear(4000);
         return;
       }
       await confirmCheckin(reg as unknown as RegistrationData, "scan");
     } finally {
-      setTimeout(() => { processingRef.current = false; }, 2000);
+      // Short serialization window; per-token cooldown handles repeats
+      setTimeout(() => { processingRef.current = false; }, 600);
     }
   }, [confirmCheckin]);
 
@@ -199,19 +276,72 @@ export default function AdminCheckin() {
     }
   }
 
+  async function tryStart(scanner: Html5Qrcode, constraint: any) {
+    await scanner.start(
+      constraint,
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (decodedText) => { processCheckinByToken(decodedText); },
+      () => {}
+    );
+  }
+
   async function startScanner() {
+    if (scannerActive || scannerStarting) return;
+
+    // Unlock audio (iOS) on the same user gesture
+    ensureAudio();
+
+    if (!window.isSecureContext) {
+      toast.error("A câmera requer HTTPS para funcionar.");
+      return;
+    }
+
+    setScannerStarting(true);
+    // Wait one paint so #qr-reader has real dimensions before the lib injects <video>
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
     try {
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => { processCheckinByToken(decodedText); },
-        () => {}
-      );
+      try {
+        await tryStart(scanner, { facingMode: { ideal: "environment" } });
+      } catch (err: any) {
+        if (err?.name === "OverconstrainedError" || err?.name === "NotFoundError") {
+          // Fallback to any available camera
+          await tryStart(scanner, { facingMode: "user" });
+        } else {
+          throw err;
+        }
+      }
+
+      // Make the injected <video> render correctly on iOS Safari and small screens
+      const container = document.getElementById("qr-reader");
+      const video = container?.querySelector("video") as HTMLVideoElement | null;
+      if (video) {
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        video.style.width = "100%";
+        video.style.height = "100%";
+        video.style.objectFit = "cover";
+      }
+
       setScannerActive(true);
-    } catch {
-      toast.error("Não foi possível acessar a câmera");
+    } catch (err: any) {
+      const name = err?.name || "";
+      if (name === "NotAllowedError") {
+        toast.error("Permissão de câmera negada. Habilite nas configurações do navegador.");
+      } else if (name === "NotFoundError") {
+        toast.error("Nenhuma câmera encontrada neste dispositivo.");
+      } else if (name === "NotReadableError") {
+        toast.error("Câmera em uso por outro aplicativo.");
+      } else {
+        toast.error("Não foi possível acessar a câmera.");
+      }
+      // Cleanup partially started scanner
+      try { await scannerRef.current?.stop(); } catch {}
+      scannerRef.current = null;
+    } finally {
+      setScannerStarting(false);
     }
   }
 
@@ -221,9 +351,20 @@ export default function AdminCheckin() {
       scannerRef.current = null;
     }
     setScannerActive(false);
+    setScannerStarting(false);
   }
 
-  useEffect(() => { return () => { stopScanner(); }; }, []);
+  useEffect(() => {
+    return () => {
+      stopScanner();
+      if (resultClearTimerRef.current) {
+        window.clearTimeout(resultClearTimerRef.current);
+      }
+      // Best-effort close audio context
+      try { audioCtxRef.current?.close(); } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filtered list of checked-in (server already applied filters; this is just defensive for UI search of checked-in list)
   const filteredCheckedIn = applyDynamicFilters(checkedIn, []);
@@ -258,13 +399,34 @@ export default function AdminCheckin() {
               variant={scannerActive ? "destructive" : "default"}
               size="sm"
               onClick={scannerActive ? stopScanner : startScanner}
+              disabled={scannerStarting}
               className="gap-2"
             >
-              {scannerActive ? <><CameraOff className="h-4 w-4" /> Parar Câmera</> : <><Camera className="h-4 w-4" /> Abrir Câmera</>}
+              {scannerStarting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Iniciando...</>
+              ) : scannerActive ? (
+                <><CameraOff className="h-4 w-4" /> Parar Câmera</>
+              ) : (
+                <><Camera className="h-4 w-4" /> Abrir Câmera</>
+              )}
             </Button>
           </div>
-          <div id="qr-reader" className={`mx-auto overflow-hidden rounded-lg ${scannerActive ? "w-full max-w-sm" : "hidden"}`} />
-          {scannerActive && <p className="text-center text-xs text-muted-foreground">Aponte a câmera para o QR Code do participante</p>}
+          {(scannerActive || scannerStarting) && (
+            <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-lg bg-muted">
+              <div id="qr-reader" className="absolute inset-0" />
+              {scannerStarting && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/70 backdrop-blur-sm">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">Iniciando câmera...</p>
+                </div>
+              )}
+            </div>
+          )}
+          {scannerActive && (
+            <p className="text-center text-xs text-muted-foreground">
+              Aponte a câmera para o QR Code do participante. A câmera continua ativa para o próximo.
+            </p>
+          )}
         </CardContent>
       </Card>
 
