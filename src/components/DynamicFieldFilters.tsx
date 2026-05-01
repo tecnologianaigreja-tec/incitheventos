@@ -149,6 +149,19 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
   }
 
   const canApply = hasOptions ? selectedValues.length > 0 : !!filterValue;
+  const hasSelectionInProgress = !!selectedField || !!filterValue || selectedValues.length > 0;
+
+  function clearSelection() {
+    setSelectedField("");
+    setFilterValue("");
+    setSelectedValues([]);
+    setPopoverOpen(false);
+  }
+
+  function clearAll() {
+    clearSelection();
+    onFiltersChange([]);
+  }
 
   return (
     <div className="space-y-3">
@@ -213,6 +226,32 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
         {selectedField && canApply && (
           <Button onClick={addFilter} size="sm" className="gap-1">
             <Filter className="h-3 w-3" /> Aplicar
+          </Button>
+        )}
+
+        {hasSelectionInProgress && (
+          <Button
+            onClick={clearSelection}
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground"
+            aria-label="Limpar seleção"
+            title="Limpar seleção em curso"
+          >
+            <X className="h-3 w-3" /> Limpar
+          </Button>
+        )}
+
+        {(activeFilters.length > 0 || hasSelectionInProgress) && (
+          <Button
+            onClick={clearAll}
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground"
+            aria-label="Limpar todos os filtros"
+            title="Limpar todos os filtros"
+          >
+            <X className="h-3 w-3" /> Limpar tudo
           </Button>
         )}
       </div>
