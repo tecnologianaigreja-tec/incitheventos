@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { applyDynamicFiltersToQuery } from "@/lib/dynamicFilterQuery";
