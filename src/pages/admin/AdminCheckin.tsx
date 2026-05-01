@@ -331,10 +331,31 @@ export default function AdminCheckin() {
       toast.error("A câmera requer HTTPS para funcionar.");
       return;
     }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Este navegador não suporta acesso à câmera.");
+      return;
+    }
 
     setScannerStarting(true);
-    // Wait one paint so #qr-reader has real dimensions before the lib injects <video>
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    // Wait until React actually mounts the <div id="qr-reader"> in the DOM.
+    // requestAnimationFrame alone is NOT enough (React batches state → render).
+    const containerEl = await new Promise<HTMLElement | null>((resolve) => {
+      let attempts = 0;
+      const check = () => {
+        const el = document.getElementById("qr-reader");
+        if (el) { resolve(el); return; }
+        if (++attempts > 30) { resolve(null); return; } // ~500ms max
+        setTimeout(check, 16);
+      };
+      check();
+    });
+
+    if (!containerEl) {
+      setScannerStarting(false);
+      toast.error("Não foi possível inicializar o leitor de câmera.");
+      return;
+    }
 
     try {
       const scanner = new Html5Qrcode("qr-reader");
@@ -351,8 +372,7 @@ export default function AdminCheckin() {
       }
 
       // Make the injected <video> render correctly on iOS Safari and small screens
-      const container = document.getElementById("qr-reader");
-      const video = container?.querySelector("video") as HTMLVideoElement | null;
+      const video = containerEl.querySelector("video") as HTMLVideoElement | null;
       if (video) {
         video.setAttribute("playsinline", "true");
         video.muted = true;
@@ -364,6 +384,7 @@ export default function AdminCheckin() {
       setScannerActive(true);
     } catch (err: any) {
       const name = err?.name || "";
+      console.warn("[checkin] camera start failed", err);
       if (name === "NotAllowedError") {
         toast.error("Permissão de câmera negada. Habilite nas configurações do navegador.");
       } else if (name === "NotFoundError") {
