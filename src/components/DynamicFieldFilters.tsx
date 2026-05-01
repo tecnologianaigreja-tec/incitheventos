@@ -228,6 +228,32 @@ export default function DynamicFieldFilters({ customFields, activeFilters, onFil
             <Filter className="h-3 w-3" /> Aplicar
           </Button>
         )}
+
+        {hasSelectionInProgress && (
+          <Button
+            onClick={clearSelection}
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground"
+            aria-label="Limpar seleção"
+            title="Limpar seleção em curso"
+          >
+            <X className="h-3 w-3" /> Limpar
+          </Button>
+        )}
+
+        {(activeFilters.length > 0 || hasSelectionInProgress) && (
+          <Button
+            onClick={clearAll}
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground"
+            aria-label="Limpar todos os filtros"
+            title="Limpar todos os filtros"
+          >
+            <X className="h-3 w-3" /> Limpar tudo
+          </Button>
+        )}
       </div>
 
       {activeFilters.length > 0 && (
