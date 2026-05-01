@@ -166,12 +166,16 @@ export default function AdminCheckin() {
   const confirmCheckin = useCallback(async (registration: RegistrationData, action: "scan" | "manual" = "manual") => {
     if (registration.payment_status !== "approved") {
       setResult({ reg: registration, status: "not_paid" });
+      playBeep("error");
       toast.error("Pagamento não aprovado");
+      scheduleResultClear(4000);
       return;
     }
     if (registration.checkin_status === "checked_in") {
       setResult({ reg: registration, status: "already" });
+      playBeep("warning");
       toast.warning("Participante já registrado");
+      scheduleResultClear(2500);
       return;
     }
 
@@ -184,7 +188,9 @@ export default function AdminCheckin() {
 
     if (error) {
       setResult({ reg: registration, status: "error" });
+      playBeep("error");
       toast.error("Erro no check-in");
+      scheduleResultClear(4000);
       return;
     }
 
@@ -196,7 +202,9 @@ export default function AdminCheckin() {
 
     const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: new Date().toISOString() };
     setResult({ reg: updated, status: "success" });
+    playBeep("success");
     toast.success(`Check-in de ${registration.full_name} realizado!`);
+    scheduleResultClear(2500);
 
     // Reflect in the search list, if visible
     setSearchResults(prev => prev ? prev.map(r => r.id === registration.id ? updated : r) : prev);
