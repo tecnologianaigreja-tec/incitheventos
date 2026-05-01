@@ -212,24 +212,36 @@ export default function AdminCheckin() {
     loadCheckedIn();
   }, [loadCheckedIn]);
 
-  const processCheckinByToken = useCallback(async (token: string) => {
+  const processCheckinByToken = useCallback(async (rawToken: string) => {
+    const token = (rawToken || "").trim();
+    if (!token) return;
+
+    // Per-token cooldown: ignore the same QR being scanned repeatedly within 3s
+    const now = Date.now();
+    const last = lastScannedRef.current.get(token) || 0;
+    if (now - last < 3000) return;
+    lastScannedRef.current.set(token, now);
+
     if (processingRef.current) return;
     processingRef.current = true;
     try {
       const { data: reg } = await supabase
         .from("registrations")
         .select("*")
-        .eq("qr_token", token.trim())
-        .single();
+        .eq("qr_token", token)
+        .maybeSingle();
 
       if (!reg) {
         setResult({ reg: null as any, status: "not_found" });
+        playBeep("error");
         toast.error("QR Code inválido");
+        scheduleResultClear(4000);
         return;
       }
       await confirmCheckin(reg as unknown as RegistrationData, "scan");
     } finally {
-      setTimeout(() => { processingRef.current = false; }, 2000);
+      // Short serialization window; per-token cooldown handles repeats
+      setTimeout(() => { processingRef.current = false; }, 600);
     }
   }, [confirmCheckin]);
 
