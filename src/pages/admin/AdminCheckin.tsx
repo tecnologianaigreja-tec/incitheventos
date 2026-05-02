@@ -1,19 +1,36 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { RegistrationData, EventFormField } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2 } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2, FileDown } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import AdminPagination from "@/components/admin/AdminPagination";
+import CheckinRaffle from "@/components/CheckinRaffle";
+import { downloadCheckinReport, type CheckinReportRow } from "@/lib/checkinReportPdf";
+import { format } from "date-fns";
 
 const PAGE_SIZE = 50;
+
+function eachDay(startISO: string, endISO: string): string[] {
+  const out: string[] = [];
+  const s = new Date(startISO + "T12:00:00");
+  const e = new Date(endISO + "T12:00:00");
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
 
 // Always-available filter fields (even if event has no custom form fields).
 const FIXED_FILTER_FIELDS: EventFormField[] = [
