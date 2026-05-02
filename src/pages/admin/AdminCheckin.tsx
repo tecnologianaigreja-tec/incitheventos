@@ -512,9 +512,103 @@ export default function AdminCheckin() {
   // `checkedIn` is already the filtered + paginated slice from loadCheckedIn().
   const filteredCheckedIn = checkedIn;
 
+  async function handleExportReport() {
+    if (!selectedEvent || !selectedDay) {
+      toast.error("Selecione um evento e o dia");
+      return;
+    }
+    setExportingReport(true);
+    try {
+      // Build presence_by_day for ALL filtered rows (across event days)
+      let presenceMap = new Map<string, Record<string, boolean>>();
+      if (isMultiDay && allCheckedIn.length > 0) {
+        const ids = allCheckedIn.map(r => r.id);
+        for (let i = 0; i < ids.length; i += 500) {
+          const chunk = ids.slice(i, i + 500);
+          const { data } = await supabase
+            .from("checkin_days")
+            .select("registration_id, event_day")
+            .eq("event_id", selectedEvent.id)
+            .in("registration_id", chunk);
+          (data || []).forEach((row: any) => {
+            const cur = presenceMap.get(row.registration_id) || {};
+            cur[row.event_day] = true;
+            presenceMap.set(row.registration_id, cur);
+          });
+        }
+      }
+
+      const rows: CheckinReportRow[] = allCheckedIn
+        .map(r => ({
+          ...r,
+          day_checked_at: dayCheckinMap.get(r.id) || r.checkin_at || "",
+          presence_by_day: presenceMap.get(r.id) || { [selectedDay]: true },
+        }))
+        .sort((a, b) => (a.day_checked_at || "").localeCompare(b.day_checked_at || ""));
+
+      downloadCheckinReport({
+        eventTitle: selectedEvent.title,
+        eventStartDate: selectedEvent.start_date,
+        eventEndDate: selectedEvent.end_date,
+        selectedDay,
+        eventDays,
+        filters: dynamicFilters,
+        rows,
+        slug: selectedEvent.slug || "evento",
+      });
+      toast.success("Relatório gerado!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao gerar relatório");
+    } finally {
+      setExportingReport(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <h2 className="font-serif text-xl font-bold text-foreground">Check-in</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-serif text-xl font-bold text-foreground">Check-in</h2>
+      </div>
+
+      {/* Event + Day selectors */}
+      <Card>
+        <CardContent className="p-4 grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Evento</Label>
+            <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+              <SelectTrigger><SelectValue placeholder="Selecione um evento" /></SelectTrigger>
+              <SelectContent>
+                {events.map(e => (
+                  <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {isMultiDay ? (
+            <div className="space-y-1">
+              <Label className="text-xs">Dia do check-in</Label>
+              <Select value={selectedDay} onValueChange={setSelectedDay}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {eventDays.map((d, i) => (
+                    <SelectItem key={d} value={d}>
+                      Dia {i + 1} — {format(new Date(d + "T12:00:00"), "dd/MM/yyyy")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label className="text-xs">Dia do check-in</Label>
+              <div className="h-10 flex items-center px-3 rounded-md border border-input bg-muted/30 text-sm text-muted-foreground">
+                {selectedDay ? format(new Date(selectedDay + "T12:00:00"), "dd/MM/yyyy") : "—"}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Presence Counter */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -706,16 +800,31 @@ export default function AdminCheckin() {
         </Card>
       )}
 
+      {/* Raffle among present participants (uses full filtered set, not paginated) */}
+      <CheckinRaffle pool={allCheckedIn} />
+
       {/* Checked-in list with filters */}
       <Card>
         <CardContent className="p-6 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-serif text-lg font-semibold text-foreground">
               Participantes presentes
             </h3>
-            <Badge variant="outline" className="text-sm">
-              {totalCount} presente{totalCount !== 1 ? "s" : ""}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-sm">
+                {totalCount} presente{totalCount !== 1 ? "s" : ""}
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportReport}
+                disabled={exportingReport || allCheckedIn.length === 0}
+                className="gap-2"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                {exportingReport ? "Gerando..." : "Exportar PDF"}
+              </Button>
+            </div>
           </div>
 
           <div className="relative">
