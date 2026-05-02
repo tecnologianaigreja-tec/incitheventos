@@ -112,14 +112,26 @@ export default function AdminCheckin() {
     }, ms);
   }
 
+  // Event + day selectors (multi-day support)
+  const [events, setEvents] = useState<Array<{ id: string; title: string; start_date: string; end_date: string; slug: string }>>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [selectedDay, setSelectedDay] = useState<string>("");
+
   // Checked-in list + filters
   const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
+  const [allCheckedIn, setAllCheckedIn] = useState<RegistrationData[]>([]); // for raffle (full filtered set, not paginated)
+  const [dayCheckinMap, setDayCheckinMap] = useState<Map<string, string>>(new Map()); // registration_id -> checked_at for selected day
   const [customFields, setCustomFields] = useState<EventFormField[]>(FIXED_FILTER_FIELDS);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [searchCheckedIn, setSearchCheckedIn] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [exportingReport, setExportingReport] = useState(false);
+
+  const selectedEvent = useMemo(() => events.find(e => e.id === selectedEventId), [events, selectedEventId]);
+  const eventDays = useMemo(() => selectedEvent ? eachDay(selectedEvent.start_date, selectedEvent.end_date) : [], [selectedEvent]);
+  const isMultiDay = eventDays.length > 1;
 
   // Debounce search of checked-in list
   useEffect(() => {
