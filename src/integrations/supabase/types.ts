@@ -76,9 +76,11 @@ export type Database = {
       }
       certificate_templates: {
         Row: {
+          background_url: string | null
           body_text: string
           created_at: string
           event_id: string
+          field_positions: Json
           frame_style: string
           id: string
           logo_url: string | null
@@ -91,9 +93,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          background_url?: string | null
           body_text?: string
           created_at?: string
           event_id: string
+          field_positions?: Json
           frame_style?: string
           id?: string
           logo_url?: string | null
@@ -106,9 +110,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          background_url?: string | null
           body_text?: string
           created_at?: string
           event_id?: string
+          field_positions?: Json
           frame_style?: string
           id?: string
           logo_url?: string | null
@@ -166,6 +172,48 @@ export type Database = {
             foreignKeyName: "certificates_registration_id_fkey"
             columns: ["registration_id"]
             isOneToOne: true
+            referencedRelation: "registrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checkin_days: {
+        Row: {
+          checked_at: string
+          checked_by_user_id: string | null
+          event_day: string
+          event_id: string
+          id: string
+          registration_id: string
+        }
+        Insert: {
+          checked_at?: string
+          checked_by_user_id?: string | null
+          event_day: string
+          event_id: string
+          id?: string
+          registration_id: string
+        }
+        Update: {
+          checked_at?: string
+          checked_by_user_id?: string | null
+          event_day?: string
+          event_id?: string
+          id?: string
+          registration_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkin_days_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checkin_days_registration_id_fkey"
+            columns: ["registration_id"]
+            isOneToOne: false
             referencedRelation: "registrations"
             referencedColumns: ["id"]
           },

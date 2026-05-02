@@ -1,19 +1,36 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { RegistrationData, EventFormField } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2 } from "lucide-react";
+import { Camera, Search, CheckCircle, XCircle, AlertTriangle, CameraOff, Users, Loader2, FileDown } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import DynamicFieldFilters, { applyDynamicFilters, type ActiveFilter } from "@/components/DynamicFieldFilters";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import AdminPagination from "@/components/admin/AdminPagination";
+import CheckinRaffle from "@/components/CheckinRaffle";
+import { downloadCheckinReport, type CheckinReportRow } from "@/lib/checkinReportPdf";
+import { format } from "date-fns";
 
 const PAGE_SIZE = 50;
+
+function eachDay(startISO: string, endISO: string): string[] {
+  const out: string[] = [];
+  const s = new Date(startISO + "T12:00:00");
+  const e = new Date(endISO + "T12:00:00");
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
 
 // Always-available filter fields (even if event has no custom form fields).
 const FIXED_FILTER_FIELDS: EventFormField[] = [
@@ -95,14 +112,26 @@ export default function AdminCheckin() {
     }, ms);
   }
 
+  // Event + day selectors (multi-day support)
+  const [events, setEvents] = useState<Array<{ id: string; title: string; start_date: string; end_date: string; slug: string }>>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [selectedDay, setSelectedDay] = useState<string>("");
+
   // Checked-in list + filters
   const [checkedIn, setCheckedIn] = useState<RegistrationData[]>([]);
+  const [allCheckedIn, setAllCheckedIn] = useState<RegistrationData[]>([]); // for raffle (full filtered set, not paginated)
+  const [dayCheckinMap, setDayCheckinMap] = useState<Map<string, string>>(new Map()); // registration_id -> checked_at for selected day
   const [customFields, setCustomFields] = useState<EventFormField[]>(FIXED_FILTER_FIELDS);
   const [dynamicFilters, setDynamicFilters] = useState<ActiveFilter[]>([]);
   const [searchCheckedIn, setSearchCheckedIn] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [exportingReport, setExportingReport] = useState(false);
+
+  const selectedEvent = useMemo(() => events.find(e => e.id === selectedEventId), [events, selectedEventId]);
+  const eventDays = useMemo(() => selectedEvent ? eachDay(selectedEvent.start_date, selectedEvent.end_date) : [], [selectedEvent]);
+  const isMultiDay = eventDays.length > 1;
 
   // Debounce search of checked-in list
   useEffect(() => {
@@ -110,7 +139,30 @@ export default function AdminCheckin() {
     return () => clearTimeout(t);
   }, [searchCheckedIn]);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, dynamicFilters]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, dynamicFilters, selectedEventId, selectedDay]);
+
+  // Load events
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("events")
+        .select("id, title, start_date, end_date, slug, status")
+        .in("status", ["published", "closed", "concluded"])
+        .order("start_date", { ascending: false });
+      const list = (data || []) as any[];
+      setEvents(list);
+      if (list.length > 0 && !selectedEventId) setSelectedEventId(list[0].id);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Default day when event changes
+  useEffect(() => {
+    if (!selectedEvent) { setSelectedDay(""); return; }
+    const days = eachDay(selectedEvent.start_date, selectedEvent.end_date);
+    const t = todayISO();
+    setSelectedDay(days.includes(t) ? t : days[0]);
+  }, [selectedEvent]);
 
   // Load custom fields from ALL events once, so filters always include cargo/área/etc.
   useEffect(() => {
@@ -134,30 +186,51 @@ export default function AdminCheckin() {
   }, []);
 
   const loadCheckedIn = useCallback(async () => {
-    // Fetch ALL checked-in registrations, then filter + paginate client-side.
-    // Server-side JSONB path filtering breaks for custom_fields keys with spaces/accents
-    // (e.g. "ÁREA DE CONG. A QUE PERTENCE "), so we mirror the proven approach used
-    // in AdminRegistrations.tsx via getFieldValue (which normalizes keys).
-    const all = await fetchAllPages<RegistrationData>(() => {
-      let q = supabase
-        .from("registrations")
-        .select("*")
-        .eq("checkin_status", "checked_in")
-        .order("checkin_at", { ascending: false });
+    if (!selectedEventId || !selectedDay) {
+      setCheckedIn([]); setAllCheckedIn([]); setTotalCount(0); setDayCheckinMap(new Map());
+      return;
+    }
+    // 1) Fetch checkin_days for the selected event/day
+    const dayRows = await fetchAllPages<{ registration_id: string; checked_at: string }>(() =>
+      supabase
+        .from("checkin_days")
+        .select("registration_id, checked_at")
+        .eq("event_id", selectedEventId)
+        .eq("event_day", selectedDay)
+        .order("checked_at", { ascending: false })
+    );
+    const idToCheckedAt = new Map<string, string>();
+    dayRows.forEach(r => idToCheckedAt.set(r.registration_id, r.checked_at));
+    setDayCheckinMap(idToCheckedAt);
 
+    if (dayRows.length === 0) {
+      setCheckedIn([]); setAllCheckedIn([]); setTotalCount(0);
+      return;
+    }
+
+    // 2) Fetch registrations in batches (in() limit safe at 500)
+    const ids = Array.from(idToCheckedAt.keys());
+    const allRegs: RegistrationData[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      let q = supabase.from("registrations").select("*").in("id", chunk);
       if (debouncedSearch) {
         const escaped = debouncedSearch.replace(/[%,]/g, "");
         q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
       }
-      return q;
-    });
+      const { data } = await q;
+      allRegs.push(...((data || []) as unknown as RegistrationData[]));
+    }
+    // Override checkin_at with the per-day timestamp for display/sort
+    const decorated = allRegs.map(r => ({ ...r, checkin_at: idToCheckedAt.get(r.id) || r.checkin_at }));
+    decorated.sort((a, b) => (b.checkin_at || "").localeCompare(a.checkin_at || ""));
 
-    const filtered = applyDynamicFilters(all as RegistrationData[], dynamicFilters);
+    const filtered = applyDynamicFilters(decorated, dynamicFilters);
+    setAllCheckedIn(filtered);
     setTotalCount(filtered.length);
-
     const from = (page - 1) * PAGE_SIZE;
     setCheckedIn(filtered.slice(from, from + PAGE_SIZE));
-  }, [page, debouncedSearch, dynamicFilters]);
+  }, [page, debouncedSearch, dynamicFilters, selectedEventId, selectedDay]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
 
@@ -173,31 +246,39 @@ export default function AdminCheckin() {
       scheduleResultClear(4000);
       return;
     }
-    if (registration.checkin_status === "checked_in") {
-      setResult({ reg: registration, status: "already" });
-      playBeep("warning");
-      toast.warning("Participante já registrado");
-      scheduleResultClear(2500);
+    if (!selectedEventId || !selectedDay) {
+      toast.error("Selecione um evento e o dia do check-in");
+      return;
+    }
+    // Validate event matches
+    if (registration.event_id && registration.event_id !== selectedEventId) {
+      toast.error("Esta inscrição é de outro evento");
+      playBeep("error");
       return;
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     const checkinAt = new Date().toISOString();
 
-    // Idempotent / race-safe update: only succeeds if not yet checked in.
-    // Two concurrent operators can't both succeed.
-    const { data: updatedRows, error } = await supabase
-      .from("registrations")
-      .update({
-        checkin_status: "checked_in",
-        checkin_at: checkinAt,
-        checkin_by_user_id: user?.id,
-      })
-      .eq("id", registration.id)
-      .eq("checkin_status", "not_checked_in")
-      .select("id, checkin_at");
+    // Per-day idempotent insert (UNIQUE constraint registration_id+event_day)
+    const { error: dayErr } = await supabase.from("checkin_days").insert({
+      registration_id: registration.id,
+      event_id: selectedEventId,
+      event_day: selectedDay,
+      checked_at: checkinAt,
+      checked_by_user_id: user?.id,
+    });
 
-    if (error) {
+    if (dayErr) {
+      // 23505 = duplicate → already checked in for this day
+      if ((dayErr as any).code === "23505") {
+        const dayLabel = format(new Date(selectedDay + "T12:00:00"), "dd/MM");
+        setResult({ reg: { ...registration, checkin_status: "checked_in" }, status: "already" });
+        playBeep("warning");
+        toast.warning(`Já presente em ${dayLabel}`);
+        scheduleResultClear(2500);
+        return;
+      }
       setResult({ reg: registration, status: "error" });
       playBeep("error");
       toast.error("Erro no check-in");
@@ -205,31 +286,25 @@ export default function AdminCheckin() {
       return;
     }
 
-    // No row updated → someone else already checked them in (or status changed)
-    if (!updatedRows || updatedRows.length === 0) {
-      // Re-fetch to show actual checkin_at
-      const { data: latest } = await supabase
+    // Best-effort: maintain legacy registrations.checkin_status as "ever attended"
+    if (registration.checkin_status === "not_checked_in") {
+      await supabase
         .from("registrations")
-        .select("*")
+        .update({
+          checkin_status: "checked_in",
+          checkin_at: checkinAt,
+          checkin_by_user_id: user?.id,
+        })
         .eq("id", registration.id)
-        .maybeSingle();
-      const reg = (latest as unknown as RegistrationData) || registration;
-      setResult({ reg: { ...reg, checkin_status: "checked_in" }, status: "already" });
-      playBeep("warning");
-      toast.warning("Participante já registrado");
-      scheduleResultClear(2500);
-      return;
+        .eq("checkin_status", "not_checked_in");
     }
 
-    // Best-effort log; surface failure to console but do not block the UX
-    const { error: logError } = await supabase.from("checkin_logs").insert({
+    // Best-effort log
+    await supabase.from("checkin_logs").insert({
       registration_id: registration.id,
       action_type: action,
       checked_by_user_id: user?.id,
     });
-    if (logError) {
-      console.warn("[checkin] log insert failed", logError);
-    }
 
     const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: checkinAt };
     setResult({ reg: updated, status: "success" });
@@ -237,11 +312,9 @@ export default function AdminCheckin() {
     toast.success(`Check-in de ${registration.full_name} realizado!`);
     scheduleResultClear(2500);
 
-    // Reflect in the search list, if visible
     setSearchResults(prev => prev ? prev.map(r => r.id === registration.id ? updated : r) : prev);
-
     loadCheckedIn();
-  }, [loadCheckedIn]);
+  }, [loadCheckedIn, selectedEventId, selectedDay]);
 
   const processCheckinByToken = useCallback(async (rawToken: string) => {
     const token = (rawToken || "").trim();
