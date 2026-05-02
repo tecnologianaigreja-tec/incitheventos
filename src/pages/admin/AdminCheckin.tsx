@@ -139,7 +139,30 @@ export default function AdminCheckin() {
     return () => clearTimeout(t);
   }, [searchCheckedIn]);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, dynamicFilters]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, dynamicFilters, selectedEventId, selectedDay]);
+
+  // Load events
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("events")
+        .select("id, title, start_date, end_date, slug, status")
+        .in("status", ["published", "closed", "concluded"])
+        .order("start_date", { ascending: false });
+      const list = (data || []) as any[];
+      setEvents(list);
+      if (list.length > 0 && !selectedEventId) setSelectedEventId(list[0].id);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Default day when event changes
+  useEffect(() => {
+    if (!selectedEvent) { setSelectedDay(""); return; }
+    const days = eachDay(selectedEvent.start_date, selectedEvent.end_date);
+    const t = todayISO();
+    setSelectedDay(days.includes(t) ? t : days[0]);
+  }, [selectedEvent]);
 
   // Load custom fields from ALL events once, so filters always include cargo/área/etc.
   useEffect(() => {
@@ -163,30 +186,51 @@ export default function AdminCheckin() {
   }, []);
 
   const loadCheckedIn = useCallback(async () => {
-    // Fetch ALL checked-in registrations, then filter + paginate client-side.
-    // Server-side JSONB path filtering breaks for custom_fields keys with spaces/accents
-    // (e.g. "ÁREA DE CONG. A QUE PERTENCE "), so we mirror the proven approach used
-    // in AdminRegistrations.tsx via getFieldValue (which normalizes keys).
-    const all = await fetchAllPages<RegistrationData>(() => {
-      let q = supabase
-        .from("registrations")
-        .select("*")
-        .eq("checkin_status", "checked_in")
-        .order("checkin_at", { ascending: false });
+    if (!selectedEventId || !selectedDay) {
+      setCheckedIn([]); setAllCheckedIn([]); setTotalCount(0); setDayCheckinMap(new Map());
+      return;
+    }
+    // 1) Fetch checkin_days for the selected event/day
+    const dayRows = await fetchAllPages<{ registration_id: string; checked_at: string }>(() =>
+      supabase
+        .from("checkin_days")
+        .select("registration_id, checked_at")
+        .eq("event_id", selectedEventId)
+        .eq("event_day", selectedDay)
+        .order("checked_at", { ascending: false })
+    );
+    const idToCheckedAt = new Map<string, string>();
+    dayRows.forEach(r => idToCheckedAt.set(r.registration_id, r.checked_at));
+    setDayCheckinMap(idToCheckedAt);
 
+    if (dayRows.length === 0) {
+      setCheckedIn([]); setAllCheckedIn([]); setTotalCount(0);
+      return;
+    }
+
+    // 2) Fetch registrations in batches (in() limit safe at 500)
+    const ids = Array.from(idToCheckedAt.keys());
+    const allRegs: RegistrationData[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      let q = supabase.from("registrations").select("*").in("id", chunk);
       if (debouncedSearch) {
         const escaped = debouncedSearch.replace(/[%,]/g, "");
         q = q.or(`full_name.ilike.%${escaped}%,email.ilike.%${escaped}%,cpf.ilike.%${escaped}%`);
       }
-      return q;
-    });
+      const { data } = await q;
+      allRegs.push(...((data || []) as unknown as RegistrationData[]));
+    }
+    // Override checkin_at with the per-day timestamp for display/sort
+    const decorated = allRegs.map(r => ({ ...r, checkin_at: idToCheckedAt.get(r.id) || r.checkin_at }));
+    decorated.sort((a, b) => (b.checkin_at || "").localeCompare(a.checkin_at || ""));
 
-    const filtered = applyDynamicFilters(all as RegistrationData[], dynamicFilters);
+    const filtered = applyDynamicFilters(decorated, dynamicFilters);
+    setAllCheckedIn(filtered);
     setTotalCount(filtered.length);
-
     const from = (page - 1) * PAGE_SIZE;
     setCheckedIn(filtered.slice(from, from + PAGE_SIZE));
-  }, [page, debouncedSearch, dynamicFilters]);
+  }, [page, debouncedSearch, dynamicFilters, selectedEventId, selectedDay]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
 
