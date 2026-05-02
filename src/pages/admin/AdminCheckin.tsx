@@ -580,7 +580,7 @@ export default function AdminCheckin() {
         <CardContent className="p-4 grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label className="text-xs">Evento</Label>
-            <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+            <Select value={selectedEventId || undefined} onValueChange={setSelectedEventId}>
               <SelectTrigger><SelectValue placeholder="Selecione um evento" /></SelectTrigger>
               <SelectContent>
                 {events.map(e => (
