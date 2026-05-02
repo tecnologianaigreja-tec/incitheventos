@@ -232,7 +232,7 @@ export default function AdminCertificates() {
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="space-y-1 flex-1 max-w-xs">
           <Label>Evento</Label>
-          <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+          <Select value={selectedEventId || undefined} onValueChange={setSelectedEventId}>
             <SelectTrigger><SelectValue placeholder="Selecione um evento" /></SelectTrigger>
             <SelectContent>
               {events.map(e => (
