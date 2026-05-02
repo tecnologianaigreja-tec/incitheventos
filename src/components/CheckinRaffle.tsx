@@ -95,7 +95,10 @@ export default function CheckinRaffle({ pool }: Props) {
             <h3 className="font-serif text-lg font-semibold text-foreground">
               Sorteio entre presentes
             </h3>
-            <Badge variant="outline">{pool.length} elegíveis</Badge>
+            <Badge variant="outline">
+              {eligible.length} elegíve{eligible.length === 1 ? "l" : "is"}
+              {!allowRepeat && drawnIds.size > 0 ? ` · ${drawnIds.size} já sorteado${drawnIds.size > 1 ? "s" : ""}` : ""}
+            </Badge>
           </div>
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
