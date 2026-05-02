@@ -9,8 +9,8 @@ import { Award, Download, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import CertificateTemplateEditor from "@/components/CertificateTemplateEditor";
-import { generateCertificatePdf } from "@/lib/certificatePdf";
+import CertificateVisualEditor from "@/components/CertificateVisualEditor";
+import { generateCertificatePdf, type FieldPosition } from "@/lib/certificatePdf";
 import { format } from "date-fns";
 import AdminPagination from "@/components/admin/AdminPagination";
 import { fetchAllPages } from "@/lib/fetchAllPages";
@@ -180,14 +180,18 @@ export default function AdminCertificates() {
         .maybeSingle();
 
       const event = events.find(e => e.id === reg.event_id);
+      const backgroundUrl = (template as any)?.background_url as string | null | undefined;
+      const fieldPositions = ((template as any)?.field_positions as FieldPosition[] | undefined) || [];
 
-      const sigs = (template?.signatures as unknown as any[]) || [{ image_url: template?.signature_image_url, name: template?.signature_name || "", title: template?.signature_title || "" }];
+      if (!backgroundUrl) {
+        toast.error("Configure o editor visual do certificado primeiro");
+        setDownloadingId(null);
+        return;
+      }
+
       const doc = await generateCertificatePdf({
-        logoUrl: template?.logo_url,
-        bodyText: template?.body_text || "Certificamos que {nome} participou do evento {evento}, realizado no período de {data_inicio} a {data_fim}, com carga horária de {carga_horaria} horas.",
-        frameStyle: (template?.frame_style as any) || "classic",
-        signatures: sigs,
-        signaturePosition: (template?.signature_position as any) || "center",
+        backgroundUrl,
+        fieldPositions,
         participantName: reg.full_name,
         eventTitle: event?.title || "",
         startDate: event?.start_date ? format(new Date(event.start_date + "T12:00:00"), "dd/MM/yyyy") : "",
