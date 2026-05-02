@@ -232,7 +232,7 @@ export default function AdminCertificates() {
         <Tabs defaultValue="certificates">
           <TabsList>
             <TabsTrigger value="certificates" className="gap-1.5"><Award className="h-3.5 w-3.5" /> Certificados</TabsTrigger>
-            <TabsTrigger value="template" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Layout do Certificado</TabsTrigger>
+            <TabsTrigger value="template" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Editor do Certificado</TabsTrigger>
           </TabsList>
 
           <TabsContent value="certificates" className="space-y-4 mt-4">
@@ -312,7 +312,7 @@ export default function AdminCertificates() {
           </TabsContent>
 
           <TabsContent value="template" className="mt-4">
-            <CertificateTemplateEditor eventId={selectedEventId} />
+            <CertificateVisualEditor eventId={selectedEventId} />
           </TabsContent>
         </Tabs>
       )}
