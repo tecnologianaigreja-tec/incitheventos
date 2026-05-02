@@ -800,16 +800,31 @@ export default function AdminCheckin() {
         </Card>
       )}
 
+      {/* Raffle among present participants (uses full filtered set, not paginated) */}
+      <CheckinRaffle pool={allCheckedIn} />
+
       {/* Checked-in list with filters */}
       <Card>
         <CardContent className="p-6 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-serif text-lg font-semibold text-foreground">
               Participantes presentes
             </h3>
-            <Badge variant="outline" className="text-sm">
-              {totalCount} presente{totalCount !== 1 ? "s" : ""}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-sm">
+                {totalCount} presente{totalCount !== 1 ? "s" : ""}
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExportReport}
+                disabled={exportingReport || allCheckedIn.length === 0}
+                className="gap-2"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                {exportingReport ? "Gerando..." : "Exportar PDF"}
+              </Button>
+            </div>
           </div>
 
           <div className="relative">
