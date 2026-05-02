@@ -246,31 +246,39 @@ export default function AdminCheckin() {
       scheduleResultClear(4000);
       return;
     }
-    if (registration.checkin_status === "checked_in") {
-      setResult({ reg: registration, status: "already" });
-      playBeep("warning");
-      toast.warning("Participante já registrado");
-      scheduleResultClear(2500);
+    if (!selectedEventId || !selectedDay) {
+      toast.error("Selecione um evento e o dia do check-in");
+      return;
+    }
+    // Validate event matches
+    if (registration.event_id && registration.event_id !== selectedEventId) {
+      toast.error("Esta inscrição é de outro evento");
+      playBeep("error");
       return;
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     const checkinAt = new Date().toISOString();
 
-    // Idempotent / race-safe update: only succeeds if not yet checked in.
-    // Two concurrent operators can't both succeed.
-    const { data: updatedRows, error } = await supabase
-      .from("registrations")
-      .update({
-        checkin_status: "checked_in",
-        checkin_at: checkinAt,
-        checkin_by_user_id: user?.id,
-      })
-      .eq("id", registration.id)
-      .eq("checkin_status", "not_checked_in")
-      .select("id, checkin_at");
+    // Per-day idempotent insert (UNIQUE constraint registration_id+event_day)
+    const { error: dayErr } = await supabase.from("checkin_days").insert({
+      registration_id: registration.id,
+      event_id: selectedEventId,
+      event_day: selectedDay,
+      checked_at: checkinAt,
+      checked_by_user_id: user?.id,
+    });
 
-    if (error) {
+    if (dayErr) {
+      // 23505 = duplicate → already checked in for this day
+      if ((dayErr as any).code === "23505") {
+        const dayLabel = format(new Date(selectedDay + "T12:00:00"), "dd/MM");
+        setResult({ reg: { ...registration, checkin_status: "checked_in" }, status: "already" });
+        playBeep("warning");
+        toast.warning(`Já presente em ${dayLabel}`);
+        scheduleResultClear(2500);
+        return;
+      }
       setResult({ reg: registration, status: "error" });
       playBeep("error");
       toast.error("Erro no check-in");
@@ -278,31 +286,25 @@ export default function AdminCheckin() {
       return;
     }
 
-    // No row updated → someone else already checked them in (or status changed)
-    if (!updatedRows || updatedRows.length === 0) {
-      // Re-fetch to show actual checkin_at
-      const { data: latest } = await supabase
+    // Best-effort: maintain legacy registrations.checkin_status as "ever attended"
+    if (registration.checkin_status === "not_checked_in") {
+      await supabase
         .from("registrations")
-        .select("*")
+        .update({
+          checkin_status: "checked_in",
+          checkin_at: checkinAt,
+          checkin_by_user_id: user?.id,
+        })
         .eq("id", registration.id)
-        .maybeSingle();
-      const reg = (latest as unknown as RegistrationData) || registration;
-      setResult({ reg: { ...reg, checkin_status: "checked_in" }, status: "already" });
-      playBeep("warning");
-      toast.warning("Participante já registrado");
-      scheduleResultClear(2500);
-      return;
+        .eq("checkin_status", "not_checked_in");
     }
 
-    // Best-effort log; surface failure to console but do not block the UX
-    const { error: logError } = await supabase.from("checkin_logs").insert({
+    // Best-effort log
+    await supabase.from("checkin_logs").insert({
       registration_id: registration.id,
       action_type: action,
       checked_by_user_id: user?.id,
     });
-    if (logError) {
-      console.warn("[checkin] log insert failed", logError);
-    }
 
     const updated = { ...registration, checkin_status: "checked_in" as const, checkin_at: checkinAt };
     setResult({ reg: updated, status: "success" });
@@ -310,11 +312,9 @@ export default function AdminCheckin() {
     toast.success(`Check-in de ${registration.full_name} realizado!`);
     scheduleResultClear(2500);
 
-    // Reflect in the search list, if visible
     setSearchResults(prev => prev ? prev.map(r => r.id === registration.id ? updated : r) : prev);
-
     loadCheckedIn();
-  }, [loadCheckedIn]);
+  }, [loadCheckedIn, selectedEventId, selectedDay]);
 
   const processCheckinByToken = useCallback(async (rawToken: string) => {
     const token = (rawToken || "").trim();
