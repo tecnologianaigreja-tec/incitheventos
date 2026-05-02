@@ -228,11 +228,15 @@ export default function AdminCheckin() {
     const filtered = applyDynamicFilters(decorated, dynamicFilters);
     setAllCheckedIn(filtered);
     setTotalCount(filtered.length);
-    const from = (page - 1) * PAGE_SIZE;
-    setCheckedIn(filtered.slice(from, from + PAGE_SIZE));
-  }, [page, debouncedSearch, dynamicFilters, selectedEventId, selectedDay]);
+  }, [debouncedSearch, dynamicFilters, selectedEventId, selectedDay]);
 
   useEffect(() => { loadCheckedIn(); }, [loadCheckedIn]);
+
+  // Client-side pagination derived from full filtered set (avoids re-querying on page change)
+  useEffect(() => {
+    const from = (page - 1) * PAGE_SIZE;
+    setCheckedIn(allCheckedIn.slice(from, from + PAGE_SIZE));
+  }, [allCheckedIn, page]);
 
   /**
    * Performs the actual check-in mutation. Used by QR scan, token paste,
@@ -576,7 +580,7 @@ export default function AdminCheckin() {
         <CardContent className="p-4 grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label className="text-xs">Evento</Label>
-            <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+            <Select value={selectedEventId || undefined} onValueChange={setSelectedEventId}>
               <SelectTrigger><SelectValue placeholder="Selecione um evento" /></SelectTrigger>
               <SelectContent>
                 {events.map(e => (
