@@ -72,12 +72,26 @@ export default function AdminCertificates() {
   useEffect(() => { loadEvents(); }, []);
   useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page]);
 
+  async function ensureTemplateConfigured(eventId: string): Promise<boolean> {
+    const { data } = await supabase
+      .from("certificate_templates")
+      .select("background_url")
+      .eq("event_id", eventId)
+      .maybeSingle();
+    if (!data || !(data as any).background_url) {
+      toast.error("Configure o editor visual do certificado (com imagem de fundo) antes de emitir");
+      return false;
+    }
+    return true;
+  }
+
   async function issueCertificate(reg: RegistrationData) {
     const event = events.find(e => e.id === reg.event_id);
     if (!event || (event.status !== "closed" && event.status !== "concluded")) {
       toast.error("O evento precisa estar encerrado para emitir certificados");
       return;
     }
+    if (!(await ensureTemplateConfigured(reg.event_id))) return;
 
     const certCode = "CERT-" + Math.random().toString(36).substring(2, 10).toUpperCase();
     const validationHash = crypto.randomUUID();
@@ -109,6 +123,7 @@ export default function AdminCertificates() {
       toast.error("O evento precisa estar encerrado para emitir certificados");
       return;
     }
+    if (!(await ensureTemplateConfigured(selectedEventId))) return;
 
     setIssuingAll(true);
     try {
