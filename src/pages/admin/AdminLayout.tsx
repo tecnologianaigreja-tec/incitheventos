@@ -34,9 +34,14 @@ export default function AdminLayout() {
         .from("admin_users")
         .select("name, role")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (!admin) { navigate("/admin/login"); return; }
+      if (!["superadmin", "admin"].includes(admin.role)) {
+        // Operadores de check-in não têm acesso ao admin
+        navigate("/checkin");
+        return;
+      }
       setAdminName(admin.name);
       setAdminRole(admin.role === "superadmin" ? "Super Admin" : admin.role === "admin" ? "Administrador" : "Operador");
       setLoading(false);

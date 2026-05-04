@@ -32,10 +32,10 @@ export default function AdminLoginPage() {
       .from("admin_users")
       .select("role")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!adminUser) {
-      toast.error("Acesso não autorizado");
+    if (!adminUser || !["superadmin", "admin"].includes(adminUser.role)) {
+      toast.error("Acesso restrito a administradores");
       await supabase.auth.signOut();
       setLoading(false);
       return;
