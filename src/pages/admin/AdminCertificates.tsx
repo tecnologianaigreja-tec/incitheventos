@@ -55,14 +55,16 @@ export default function AdminCertificates() {
     const from = (page - 1) * CERTS_PAGE_SIZE;
     const to = from + CERTS_PAGE_SIZE - 1;
 
-    const regsRes = await supabase
+    let q = supabase
       .from("registrations")
       .select("*", { count: "exact" })
       .eq("event_id", selectedEventId)
       .eq("payment_status", "approved")
-      .eq("checkin_status", "checked_in")
-      .order("full_name", { ascending: true })
-      .range(from, to);
+      .eq("checkin_status", "checked_in");
+    if (debouncedSearch.length >= 2) {
+      q = q.ilike("full_name", `%${debouncedSearch}%`);
+    }
+    const regsRes = await q.order("full_name", { ascending: true }).range(from, to);
 
     const regs = (regsRes.data || []) as unknown as RegistrationData[];
     setRegistrations(regs);
