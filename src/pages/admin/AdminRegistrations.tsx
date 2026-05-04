@@ -19,6 +19,7 @@ import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 import AdminPagination from "@/components/admin/AdminPagination";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import { getDefaultEventId } from "@/lib/utils";
 
 const REG_PAGE_SIZE = 50;
 
