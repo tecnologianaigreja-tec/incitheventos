@@ -1,48 +1,56 @@
-# Plano de ajustes
+## Contexto
 
-## 1. Operador de check-in não deve acessar área administrativa
+Na aba **Certificados** (`AdminCertificates.tsx`):
+- Hoje só há paginação (50 por página) — sem busca por nome, dificultando localizar um participante.
+- Existem **605 inscritos elegíveis** (pagos + checked-in) no evento, mas apenas **336 certificados** foram criados. O dashboard está correto — quem está errado é o processo de emissão em lote.
 
-**Causa**: `AdminLoginPage` e `AdminLayout` apenas verificam se o usuário existe em `admin_users`, sem checar o `role`. Como `conferencia@gmail.com` está em `admin_users` com role `checkin_operator`, ele entra no `/admin` normalmente.
+### Causa do "Emitir Todos Elegíveis" parar em 336
 
-**Correção**:
-- `src/pages/admin/AdminLoginPage.tsx`: após buscar `admin_users`, validar que `role` ∈ `['superadmin','admin']`. Caso contrário, mostrar "Acesso restrito a administradores" e fazer signOut.
-- `src/pages/admin/AdminLayout.tsx`: mesma validação no `useEffect` de check; se for `checkin_operator`, redirecionar para `/checkin` em vez de `/admin/login`.
+O loop roda no navegador, fazendo um `INSERT` por participante de forma sequencial (~605 round-trips). Qualquer perda de foco da aba, refresh, navegação, ou falha intermitente de rede interrompe o processo silenciosamente — o toast final só conta o que deu certo até ali. Não há retomada nem retry. A query `existingCertIds` em chunks de 500 IDs também aumenta o tempo total antes de sequer começar a emitir.
 
-## 2. Logout aleatório com mensagem "usuário não encontrado"
+## Mudanças
 
-**Causa provável**: `src/lib/authBootstrap.ts` está sendo agressivo demais:
-- O bloco IIFE chama `supabase.auth.signOut({scope:'local'})` sempre que `getSession()` retorna `error` OU (`!session && hasStaleAuthKeys()`). Em redes lentas/race com refresh, `getSession()` pode retornar transitoriamente sem sessão enquanto as chaves ainda estão no localStorage — derrubando sessões válidas.
-- O listener limpa a sessão em `TOKEN_REFRESHED` com `session=null`, o que também ocorre em falhas transitórias de rede (não só refresh token revogado).
+### 1. Busca por nome (`src/pages/admin/AdminCertificates.tsx`)
 
-Ao recarregar a página o usuário aparece deslogado e, em uma segunda tentativa de login, ocasionalmente o `.single()` em `admin_users` falha com `PGRST116` ("Cannot coerce result to single object") quando há duplicidade ou latência → toast "usuário não encontrado".
+- Adicionar um `<Input>` de busca acima da tabela de certificados, com estado `searchTerm`.
+- Quando `searchTerm` tiver ≥ 2 caracteres, alterar a query Supabase para incluir `.ilike('full_name', '%termo%')` (mantendo paginação e contagem).
+- Resetar `page = 1` ao alterar o termo (debounce simples de 300 ms).
+- Não muda nada no fluxo de emissão individual / download de PDF — apenas filtra a listagem.
 
-**Correção**:
-- Em `src/lib/authBootstrap.ts`:
-  - Remover o IIFE de boot que chama `signOut` baseado em "stale keys" — não há critério confiável para detectar staleness sem o servidor.
-  - No `onAuthStateChange`, só fazer `signOut` quando o evento for `SIGNED_OUT` real ou quando o erro do refresh for explicitamente `invalid_refresh_token` (ouvir via `auth.onAuthStateChange` e checar `error?.code` quando disponível). Caso contrário, apenas logar e deixar o SDK tentar de novo.
-- Em `AdminLoginPage` e `CheckinLoginPage`: trocar `.single()` por `.maybeSingle()` para evitar exceções em race conditions; tratar `null` como "não autorizado".
+### 2. Emissão em lote confiável via Edge Function
 
-## 3. Disponibilizar download do certificado na consulta por CPF
+Criar nova função `supabase/functions/issue-all-certificates/index.ts`:
 
-Hoje, em `src/pages/EventsListPage.tsx` (diálogo "Consultar minhas inscrições" → cartão de credencial), só mostra QR Code. Não há nenhuma referência ao certificado.
+- Recebe `{ event_id }`.
+- Valida JWT do chamador e confirma role `admin`/`superadmin` via `admin_users`.
+- Valida que o evento está `closed` ou `concluded` e que existe template com `background_url`.
+- Usando `service_role`:
+  - Busca todas as `registrations` elegíveis (`payment_status='approved'` AND `checkin_status='checked_in'`) do evento.
+  - Busca certificados já existentes para esses IDs.
+  - Faz **um único `INSERT` em massa** dos certificados faltantes (`certificate_code` = `'CERT-' + crypto.randomUUID().slice(0,8).toUpperCase()`, `validation_hash` = `crypto.randomUUID()`).
+  - Faz **um único `UPDATE`** em `registrations` para `certificate_status='issued'` e `certificate_issued_at=now()` para os IDs recém-criados.
+  - Em caso de colisão de `certificate_code` (raro), faz retry só dos remanescentes (até 3 vezes).
+- Retorna `{ created, skipped, total_eligible }`.
+- Registrar no `supabase/config.toml` com `verify_jwt = true`.
 
-**Correção**:
-- Em `handleCpfLookup`, após carregar `registrations`, buscar em paralelo `certificates` cuja `registration_id` esteja no resultado, e armazenar em estado `certByRegId: Record<string, {id, certificate_code, validation_hash}>`.
-- No bloco do "Credential Card" (após o QR Code, antes dos botões finais), quando `certByRegId[selectedReg.id]` existir E o evento estiver `closed`/`concluded`, exibir botão **"Baixar Certificado (PDF)"** que:
-  1. Busca `certificate_templates` do `event_id` (`background_url`, `field_positions`).
-  2. Chama `generateCertificatePdf(...)` (já existe em `src/lib/certificatePdf.ts`, usado em `AdminCertificates`) com os dados do participante/evento/cert.
-  3. Faz `doc.save(...)`.
-- Caso o template não esteja configurado, mostrar toast informativo ("Certificado em preparação — tente novamente em breve").
-- Para isso, o `select` da consulta precisa também trazer `event_id`, `events.workload_hours`, `events.status` (já não traz status — adicionar).
+No frontend (`AdminCertificates.tsx`):
 
-### Observações técnicas
-- A tabela `certificates` já tem RLS pública para SELECT (`USING (true)`), então a consulta funciona sem autenticação.
-- `certificate_templates` também tem SELECT público.
-- Nenhuma migração de banco é necessária neste plano.
+- `issueAll()` passa a chamar `supabase.functions.invoke('issue-all-certificates', { body: { event_id } })`.
+- Mostra o resumo (`X certificado(s) emitido(s), Y já existiam`) e chama `loadData()`.
+- Manter o `issueCertificate(reg)` individual atual intocado (continua funcionando para casos pontuais).
 
-## Arquivos alterados
-- `src/pages/admin/AdminLoginPage.tsx`
-- `src/pages/admin/AdminLayout.tsx`
-- `src/pages/CheckinLoginPage.tsx`
-- `src/lib/authBootstrap.ts`
-- `src/pages/EventsListPage.tsx`
+### 3. Reprocessar os 269 faltantes
+
+Após o deploy, basta o admin clicar em **Emitir Todos Elegíveis** novamente — agora server-side e atômico — para preencher os ~269 que faltam. O dashboard refletirá os 605.
+
+## Garantias de não-regressão
+
+- Emissão individual, download de PDF, editor de template, paginação e contagem permanecem inalterados.
+- A busca é puramente aditiva (input + filtro `ilike`).
+- A Edge Function só substitui o loop client-side de "emitir todos"; o resto da UI continua igual.
+
+## Arquivos afetados
+
+- `src/pages/admin/AdminCertificates.tsx` (busca + chamada à edge function)
+- `supabase/functions/issue-all-certificates/index.ts` (nova)
+- `supabase/config.toml` (registrar a função)
