@@ -560,16 +560,28 @@ export default function AdminRegistrations() {
             {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
             Imprimir etiquetas ({totalCount})
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownloadReport}
-            disabled={generatingReport || totalCount === 0}
-            className="gap-2"
-          >
-            {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            Relatório PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={generatingReport || totalCount === 0}
+                className="gap-2"
+              >
+                {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Relatório PDF
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => { setSelectedExtraCols(new Set()); setGeneralReportDialog(true); }}>
+                Relatório geral (lista)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setGroupByKey(""); setSubGroupByKey("__none__"); setGroupScope("all"); setGroupedReportDialog(true); }}>
+                Relatório quantitativo (agrupado)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
