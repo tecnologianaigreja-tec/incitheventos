@@ -83,16 +83,32 @@ export default function AdminOrders() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset page on search change
-  useEffect(() => { setOrdersPage(1); }, [debouncedSearch]);
+  // Reset page on search/event change
+  useEffect(() => { setOrdersPage(1); }, [debouncedSearch, selectedEventId]);
+
+  // Load events list
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("events")
+        .select("id, title, status, start_date, created_at")
+        .order("created_at", { ascending: false });
+      const list = data || [];
+      setEvents(list);
+      const def = getDefaultEventId(list);
+      if (def) setSelectedEventId(def);
+    })();
+  }, []);
 
   async function load() {
+    if (!selectedEventId) { setLoading(false); return; }
     const from = (ordersPage - 1) * ORDERS_PAGE_SIZE;
     const to = from + ORDERS_PAGE_SIZE - 1;
 
     let ordersQuery = supabase
       .from("orders")
       .select("*", { count: "exact" })
+      .eq("event_id", selectedEventId)
       .order("created_at", { ascending: false });
 
     if (debouncedSearch) {
@@ -112,7 +128,7 @@ export default function AdminOrders() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [ordersPage, debouncedSearch]);
+  useEffect(() => { if (selectedEventId) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [ordersPage, debouncedSearch, selectedEventId]);
 
   async function callFunction(name: string, payload: Record<string, unknown>, withAuth = false) {
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
