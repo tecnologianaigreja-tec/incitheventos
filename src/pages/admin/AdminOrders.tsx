@@ -5,17 +5,19 @@ import { formatCentsToBRL } from "@/lib/constants";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, CheckCircle2, Search, ShieldCheck, FileImage, X, Check } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, Search, ShieldCheck, FileImage, X, Check, XCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import AdminPagination from "@/components/admin/AdminPagination";
+import { getDefaultEventId } from "@/lib/utils";
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente", approved: "Aprovado", refused: "Recusado",
