@@ -367,14 +367,47 @@ export default function AdminRegistrations() {
   // (custom_fields jsonb) filters are applied here over the current page.
   const filtered = applyDynamicFilters(registrations, dynamicFilters);
 
+  // Normalized key set of fixed fields that already have fallback to custom_fields
+  // Used to dedupe dynamic form fields that semantically match a fixed one.
+  const FIXED_FIELD_NORMALIZED_KEYS = new Set([
+    "area", "areadecongapertence", "areadecongregacao",
+    "congregacao", "congregation",
+    "cargo", "departamento", "churchrole",
+    "funcao", "funcaoministerial", "churchfunction",
+    "telefone", "phone", "whatsapp", "celular",
+    "datanascimento", "birthdate", "nascimento",
+  ]);
+
+  function normKey(s: string): string {
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function isDuplicateOfFixed(fieldKey: string): boolean {
+    const n = normKey(fieldKey);
+    if (FIXED_FIELD_NORMALIZED_KEYS.has(n)) return true;
+    // partial match for variants like "area_de_cong_a_que_pertence"
+    if (n.includes("area")) return true;
+    if (n.includes("congreg")) return true;
+    if (n.includes("depart") || n.includes("cargo")) return true;
+    if (n.includes("funcao") || n.includes("ministerial")) return true;
+    if (n.includes("telefone") || n.includes("whatsapp") || n.includes("celular") || n === "phone") return true;
+    if (n.includes("nascimento") || n.includes("birthdate")) return true;
+    return false;
+  }
+
   // Available extra columns for the general (list) report
+  // Use getFieldValue so values resolve from the fixed column OR from custom_fields
   const EXTRA_FIXED_COLUMNS: { key: string; label: string; getValue: (r: RegistrationData) => string }[] = [
-    { key: "phone", label: "Telefone", getValue: r => r.phone || "" },
-    { key: "birth_date", label: "Nascimento", getValue: r => r.birth_date ? new Date(r.birth_date + "T00:00:00").toLocaleDateString("pt-BR") : "" },
-    { key: "congregation", label: "Congregação", getValue: r => r.congregation || "" },
-    { key: "area", label: "Área", getValue: r => r.area || "" },
-    { key: "church_role", label: "Cargo", getValue: r => r.church_role || "" },
-    { key: "church_function", label: "Função", getValue: r => r.church_function || "" },
+    { key: "phone", label: "Telefone", getValue: r => getFieldValue(r, "phone") || r.phone || "" },
+    { key: "birth_date", label: "Nascimento", getValue: r => {
+      const v = getFieldValue(r, "birth_date") || r.birth_date || "";
+      if (!v) return "";
+      try { return new Date(v + (v.length === 10 ? "T00:00:00" : "")).toLocaleDateString("pt-BR"); } catch { return v; }
+    } },
+    { key: "congregation", label: "Congregação", getValue: r => getFieldValue(r, "congregation") || "" },
+    { key: "area", label: "Área", getValue: r => getFieldValue(r, "area") || "" },
+    { key: "church_role", label: "Cargo", getValue: r => getFieldValue(r, "church_role") || "" },
+    { key: "church_function", label: "Função", getValue: r => getFieldValue(r, "church_function") || "" },
     { key: "registration_code", label: "Código", getValue: r => r.registration_code },
     { key: "registration_type", label: "Tipo", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
     { key: "registration_status", label: "Inscrição", getValue: r => r.registration_status },
@@ -383,12 +416,12 @@ export default function AdminRegistrations() {
     { key: "created_at", label: "Inscrito em", getValue: r => new Date(r.created_at).toLocaleDateString("pt-BR") },
   ];
 
-  // All groupable fields (for quantitative report)
+  // All groupable fields (for quantitative report) — also use getFieldValue fallback
   const GROUP_FIXED_FIELDS: GroupField[] = [
-    { key: "area", label: "Área", getValue: r => r.area || "" },
-    { key: "church_role", label: "Cargo", getValue: r => r.church_role || "" },
-    { key: "church_function", label: "Função ministerial", getValue: r => r.church_function || "" },
-    { key: "congregation", label: "Congregação", getValue: r => r.congregation || "" },
+    { key: "area", label: "Área", getValue: r => getFieldValue(r, "area") || "" },
+    { key: "church_role", label: "Cargo / Departamento", getValue: r => getFieldValue(r, "church_role") || "" },
+    { key: "church_function", label: "Função ministerial", getValue: r => getFieldValue(r, "church_function") || "" },
+    { key: "congregation", label: "Congregação", getValue: r => getFieldValue(r, "congregation") || "" },
     { key: "registration_status", label: "Status da inscrição", getValue: r => r.registration_status },
     { key: "payment_status", label: "Status do pagamento", getValue: r => r.payment_status },
     { key: "registration_type", label: "Tipo (individual/lote)", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
@@ -396,15 +429,19 @@ export default function AdminRegistrations() {
   ];
 
   function getDynamicGroupFields(): GroupField[] {
-    return customFields.map(f => ({
-      key: `cf:${f.field_key}`,
-      label: f.field_label,
-      getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
-    }));
+    return customFields
+      .filter(f => !isDuplicateOfFixed(f.field_key))
+      .map(f => ({
+        key: `cf:${f.field_key}`,
+        label: f.field_label,
+        getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
+      }));
   }
 
   function getDynamicExtraColumns(): { key: string; label: string; getValue: (r: RegistrationData) => string }[] {
-    return customFields.map(f => ({
+    return customFields
+      .filter(f => !isDuplicateOfFixed(f.field_key))
+      .map(f => ({
       key: `cf:${f.field_key}`,
       label: f.field_label,
       getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
