@@ -619,6 +619,42 @@ export default function AdminOrders() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Cancel order */}
+      <Dialog open={!!cancelOrder} onOpenChange={(o) => !o && setCancelOrder(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancelar pedido</DialogTitle>
+            <DialogDescription>
+              Esta ação cancela o pedido e marca todas as inscrições vinculadas como canceladas.
+              O participante precisará realizar uma nova inscrição para o evento.
+              {cancelOrder && (
+                <span className="mt-2 block text-foreground">
+                  <strong>{cancelOrder.order_code}</strong> · {cancelOrder.buyer_name} · {formatCentsToBRL(cancelOrder.total_price_cents)}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cancel-reason">Motivo do cancelamento *</Label>
+              <Textarea
+                id="cancel-reason"
+                placeholder="Ex: Solicitação do participante via WhatsApp"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelOrder(null)} disabled={cancelSubmitting}>Voltar</Button>
+            <Button variant="destructive" onClick={submitCancelOrder} disabled={cancelSubmitting}>
+              {cancelSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Cancelar pedido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
