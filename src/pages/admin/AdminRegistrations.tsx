@@ -440,12 +440,12 @@ export default function AdminRegistrations() {
     { key: "created_at", label: "Inscrito em", getValue: r => new Date(r.created_at).toLocaleDateString("pt-BR") },
   ];
 
-  // All groupable fields (for quantitative report) — also use getFieldValue fallback
+  // All groupable fields (for quantitative report) — semantic resolver fallback
   const GROUP_FIXED_FIELDS: GroupField[] = [
-    { key: "area", label: "Área", getValue: r => getFieldValue(r, "area") || "" },
-    { key: "church_role", label: "Cargo / Departamento", getValue: r => getFieldValue(r, "church_role") || "" },
-    { key: "church_function", label: "Função ministerial", getValue: r => getFieldValue(r, "church_function") || "" },
-    { key: "congregation", label: "Congregação", getValue: r => getFieldValue(r, "congregation") || "" },
+    { key: "area", label: "Área", getValue: r => resolveFixed(r, "area") },
+    { key: "church_role", label: "Cargo / Departamento", getValue: r => resolveFixed(r, "church_role") },
+    { key: "church_function", label: "Função ministerial", getValue: r => resolveFixed(r, "church_function") },
+    { key: "congregation", label: "Congregação", getValue: r => resolveFixed(r, "congregation") },
     { key: "registration_status", label: "Status da inscrição", getValue: r => r.registration_status },
     { key: "payment_status", label: "Status do pagamento", getValue: r => r.payment_status },
     { key: "registration_type", label: "Tipo (individual/lote)", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
