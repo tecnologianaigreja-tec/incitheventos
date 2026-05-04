@@ -1,40 +1,70 @@
 ## Diagnóstico
 
-O relatório saiu com tudo "(não informado)" porque o agrupamento "Função ministerial" e o subagrupamento "Área" estão lendo as colunas **fixas** `registrations.church_function` e `registrations.area` — que estão **nulas** neste evento. Os dados reais foram coletados pelos **campos dinâmicos** do formulário (`custom_fields`):
+Confirmei no banco que as inscrições têm os dados em `custom_fields` com estas chaves:
 
-- `FUNÇÃO MINISTERIAL` → "AUXILIAR", "MEMBRO", etc.
-- `ÁREA DE CONG. A QUE PERTENCE` → "ÁREA 13", "ÁREA 2", etc.
-- `DEPARTAMENTO` → "HOMENS", "JOVENS", etc.
+- `ÁREA DE CONG. A QUE PERTENCE` → "ÁREA 13"
+- `FUNÇÃO MINISTERIAL` → "AUXILIAR" / "MEMBRO" / "DIÁCONO" / "PRESBÍTERO"
+- `DEPARTAMENTO` → "HOMENS" / "JOVENS" / etc.
 - `CONGREGAÇÃO` → texto livre
+- `telefone` → "(91) ..."
 
-Confirmado via banco em 3 inscrições amostradas: `area=null`, `church_function=null`, mas `custom_fields` populado com as chaves acima.
+O agrupamento por **Área** funciona porque `getFieldValue(r, "area")` normaliza para `"area"` e a chave dinâmica `"ÁREA DE CONG. A QUE PERTENCE"` normaliza para `"areadecongaquepertence"`, que **contém** `"area"` — match feito por `findInCustomFields`.
 
-Hoje os campos fixos do agrupamento (`GROUP_FIXED_FIELDS` em `AdminRegistrations.tsx`) usam acesso direto: `r.area`, `r.church_function`, `r.church_role`, `r.congregation`. Quando o evento usa só campos dinâmicos, vira tudo vazio → "(não informado)".
+O subagrupamento por **Função ministerial** falha porque:
 
-Já existe o helper `getFieldValue` (em `DynamicFieldFilters.tsx`) que faz exatamente o fallback necessário: tenta a coluna fixa, depois procura em `custom_fields` por chave normalizada (acento/espaço-insensível). Os filtros dinâmicos já usam isso. O relatório quantitativo não.
+1. `getFieldValue(r, "church_function")` é chamado.
+2. `resolveKnownField("church_function")` normaliza para `"churchfunction"`, que **não** contém `"funcao"`, então retorna `undefined` (a função só mapeia rótulos PT-BR como "funcao_eclesiastica", não a própria coluna canônica).
+3. Sem fallback semântico, `findInCustomFields` tenta casar `"churchfunction"` contra `"funcaoministerial"` — não bate.
+4. Resultado: `(não informado)` para todos.
 
-## Mudanças
+O mesmo bug afeta:
 
-### 1. `src/pages/admin/AdminRegistrations.tsx`
+- `church_role` (chave dinâmica usual: `DEPARTAMENTO` / `CARGO`).
+- `congregation` (chave dinâmica: `CONGREGAÇÃO`, normaliza `"congregacao"` ≠ `"congregation"`).
 
-Trocar os `getValue` dos campos fixos para usar `getFieldValue`, garantindo que Área/Cargo/Função/Congregação resolvam tanto da coluna quanto do `custom_fields`:
+`area` funciona por coincidência de substring; os demais não.
 
-- Em `GROUP_FIXED_FIELDS`: `area`, `church_role`, `church_function`, `congregation` passam a chamar `getFieldValue(r, "area")`, `getFieldValue(r, "church_role")`, `getFieldValue(r, "church_function")`, `getFieldValue(r, "congregation")`.
-- Em `EXTRA_FIXED_COLUMNS` (relatório geral): mesma troca para `phone`, `birth_date`, `congregation`, `area`, `church_role`, `church_function`.
+## Mudança
 
-### 2. Deduplicação no diálogo de agrupamento
+### `src/pages/admin/AdminRegistrations.tsx`
 
-Para evitar mostrar "Função ministerial" (fixo) e "FUNÇÃO MINISTERIAL" (dinâmico) como opções separadas no select, ao montar a lista combinada (`[...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()]`):
+Introduzir um resolver semântico local que, dado um nome de coluna fixa, procura em `custom_fields` por qualquer chave cujo normalizado **contenha** algum dos tokens semânticos correspondentes (além de checar a coluna fixa primeiro):
 
-- Filtrar do dinâmico os campos cuja chave normalizada já bate com um campo fixo conhecido (`area`, `church_role`/cargo/departamento, `church_function`/função, `congregation`, `phone`, `birth_date`) — reaproveitando a lógica de `resolveKnownField` que já existe.
-- Fazer o mesmo para a lista de colunas extras do relatório geral.
+```ts
+const SEMANTIC_TOKENS: Record<string, string[]> = {
+  area:            ["area"],
+  church_function: ["funcaoministerial", "funcao"],
+  church_role:     ["departamento", "cargo", "ministerio"],
+  congregation:    ["congregacao", "congregation", "igreja"],
+  phone:           ["telefone", "celular", "whatsapp", "phone"],
+  birth_date:      ["datanascimento", "nascimento", "birthdate"],
+};
 
-### 3. Garantia de não-regressão
+function resolveFixed(r: RegistrationData, col: keyof RegistrationData): string {
+  const direct = (r[col] as string) || "";
+  if (direct) return direct;
+  const cf = (r.custom_fields && typeof r.custom_fields === "object") ? r.custom_fields as Record<string, any> : {};
+  const tokens = SEMANTIC_TOKENS[col as string] || [String(col)];
+  for (const [k, v] of Object.entries(cf)) {
+    if (v == null || v === "") continue;
+    const nk = normalizeKey(k);
+    if (tokens.some(t => nk.includes(t))) return String(v);
+  }
+  return "";
+}
+```
 
-- `getFieldValue` mantém a precedência: coluna fixa primeiro, fallback para `custom_fields`. Eventos antigos que populam `area`/`church_function` continuam funcionando idênticos.
-- Filtros existentes, geração do PDF, dashboard, pedidos, check-in, certificados — nada é tocado.
-- Sem mudança de schema, RLS ou edge functions.
+Substituir os `getValue: r => getFieldValue(r, "...")` em **`EXTRA_FIXED_COLUMNS`** e **`GROUP_FIXED_FIELDS`** por `resolveFixed(r, "...")` para os campos: `phone`, `birth_date`, `congregation`, `area`, `church_role`, `church_function`.
+
+A função `normalizeKey` é definida internamente (ou importada como helper já existente em `DynamicFieldFilters`).
+
+### Não-regressão
+
+- `getFieldValue` em si **não muda**, mantendo filtros dinâmicos atuais intactos.
+- Eventos onde a coluna fixa está populada continuam priorizando-a (resolver checa direct primeiro).
+- O agrupamento por **Área** continua funcionando (token `"area"` ainda casa).
+- Nenhuma alteração de schema, RLS, edge functions, ou outros telas (Dashboard, Pedidos, Check-in, Certificados).
 
 ## Resultado esperado
 
-Selecionando "Agrupar por: Função ministerial" + "Subagrupar por: Área" + "Apenas confirmados", o PDF passará a listar os totais reais por AUXILIAR / MEMBRO / etc., com sub-detalhamento por ÁREA 1, ÁREA 2, ... e Resumo final coerente.
+Refazendo o relatório quantitativo agrupado por **Área** + subagrupado por **Função ministerial**, cada Área passa a listar a quebra real: AUXILIAR, MEMBRO, DIÁCONO, PRESBÍTERO, etc., com contagens e receita corretas.
