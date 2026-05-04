@@ -253,6 +253,7 @@ export default function AdminOrders() {
     } finally { setCancelSubmitting(false); }
   }
 
+  async function openReview(proof: PaymentProof) {
     setReviewProof(proof);
     setReviewNote("");
     setReviewImageUrl(null);
