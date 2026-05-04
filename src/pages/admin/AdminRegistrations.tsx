@@ -532,9 +532,32 @@ export default function AdminRegistrations() {
         ? allExtras.filter(c => extraColsKeys.has(c.key))
         : [];
 
+      // Se a coluna "Área" estiver selecionada, ordena crescentemente por área (numérico natural).
+      const areaCol = allExtras.find(c =>
+        c.key === "area" ||
+        (c.key.startsWith("cf:") && normKey(c.key.slice(3)).includes("area"))
+      );
+      const useAreaCol = areaCol && extraColsKeys?.has(areaCol.key) ? areaCol : null;
+      const ordered = useAreaCol
+        ? [...allFiltered].sort((a, b) => {
+            const va = useAreaCol.getValue(a) || "";
+            const vb = useAreaCol.getValue(b) || "";
+            const ma = va.match(/\d+/);
+            const mb = vb.match(/\d+/);
+            const na = ma ? parseInt(ma[0], 10) : NaN;
+            const nb = mb ? parseInt(mb[0], 10) : NaN;
+            const aHas = !isNaN(na), bHas = !isNaN(nb);
+            if (aHas && bHas && na !== nb) return na - nb;
+            if (aHas && !bHas) return -1;
+            if (!aHas && bHas) return 1;
+            const cmp = va.localeCompare(vb, "pt-BR");
+            return cmp !== 0 ? cmp : a.full_name.localeCompare(b.full_name, "pt-BR");
+          })
+        : allFiltered;
+
       const doc = generateEventReportPdf({
         event: eventInfo,
-        registrations: allFiltered,
+        registrations: ordered,
         filterDescription: buildFilterDescription(),
         extraColumns,
       });
