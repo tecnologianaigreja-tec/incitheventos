@@ -230,11 +230,21 @@ export default function AdminCertificates() {
           </TabsList>
 
           <TabsContent value="certificates" className="space-y-4 mt-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h2 className="font-serif text-xl font-bold text-foreground">Certificados</h2>
               <Button onClick={issueAll} disabled={issuingAll} className="gap-2">
                 <Award className="h-4 w-4" /> {issuingAll ? "Emitindo..." : "Emitir Todos Elegíveis"}
               </Button>
+            </div>
+
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
             </div>
 
             {loading ? (
