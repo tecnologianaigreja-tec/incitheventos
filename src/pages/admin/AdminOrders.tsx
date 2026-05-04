@@ -229,6 +229,7 @@ export default function AdminOrders() {
       await load();
     } catch (err) {
       console.error(err); toast.error("Falha de conexão.");
+    } finally { setBulkSubmitting(false); }
   }
 
   function openCancelDialog(order: OrderData) {
