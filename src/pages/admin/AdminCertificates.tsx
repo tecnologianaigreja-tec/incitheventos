@@ -9,6 +9,8 @@ import { Award, Download, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import CertificateVisualEditor from "@/components/CertificateVisualEditor";
 import { generateCertificatePdf, type FieldPosition } from "@/lib/certificatePdf";
 import { format } from "date-fns";
@@ -27,9 +29,17 @@ export default function AdminCertificates() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [issuingAll, setIssuingAll] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Reset page when event changes
-  useEffect(() => { setPage(1); }, [selectedEventId]);
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // Reset page when event or search changes
+  useEffect(() => { setPage(1); }, [selectedEventId, debouncedSearch]);
 
   async function loadEvents() {
     const { data } = await supabase.from("events").select("id, title, status, start_date, end_date, workload_hours");
@@ -45,14 +55,16 @@ export default function AdminCertificates() {
     const from = (page - 1) * CERTS_PAGE_SIZE;
     const to = from + CERTS_PAGE_SIZE - 1;
 
-    const regsRes = await supabase
+    let q = supabase
       .from("registrations")
       .select("*", { count: "exact" })
       .eq("event_id", selectedEventId)
       .eq("payment_status", "approved")
-      .eq("checkin_status", "checked_in")
-      .order("full_name", { ascending: true })
-      .range(from, to);
+      .eq("checkin_status", "checked_in");
+    if (debouncedSearch.length >= 2) {
+      q = q.ilike("full_name", `%${debouncedSearch}%`);
+    }
+    const regsRes = await q.order("full_name", { ascending: true }).range(from, to);
 
     const regs = (regsRes.data || []) as unknown as RegistrationData[];
     setRegistrations(regs);
@@ -70,7 +82,7 @@ export default function AdminCertificates() {
   }
 
   useEffect(() => { loadEvents(); }, []);
-  useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page]);
+  useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch]);
 
   async function ensureTemplateConfigured(eventId: string): Promise<boolean> {
     const { data } = await supabase
@@ -127,55 +139,22 @@ export default function AdminCertificates() {
 
     setIssuingAll(true);
     try {
-      // Fetch all eligible registrations across pages
-      const allRegs = await fetchAllPages<RegistrationData>(() =>
-        supabase
-          .from("registrations")
-          .select("*")
-          .eq("event_id", selectedEventId)
-          .eq("payment_status", "approved")
-          .eq("checkin_status", "checked_in")
-          .order("full_name", { ascending: true }),
-      );
-      // Fetch existing certificates for those IDs
-      const ids = allRegs.map(r => r.id);
-      let existingCertIds = new Set<string>();
-      if (ids.length > 0) {
-        // Chunk to avoid overly long IN clauses
-        for (let i = 0; i < ids.length; i += 500) {
-          const chunk = ids.slice(i, i + 500);
-          const { data } = await supabase.from("certificates").select("registration_id").in("registration_id", chunk);
-          (data || []).forEach((c: any) => existingCertIds.add(c.registration_id));
-        }
+      const { data, error } = await supabase.functions.invoke("issue-all-certificates", {
+        body: { event_id: selectedEventId },
+      });
+      if (error) throw error;
+      const created = (data as any)?.created ?? 0;
+      const already = (data as any)?.already_existed ?? 0;
+      const total = (data as any)?.total_eligible ?? 0;
+      if (created === 0) {
+        toast.info(`Nenhum novo certificado emitido (${already}/${total} já existiam)`);
+      } else {
+        toast.success(`${created} certificado(s) emitido(s) — ${already + created}/${total} no total`);
       }
-      const eligible = allRegs.filter(r => !existingCertIds.has(r.id));
-      if (eligible.length === 0) {
-        toast.info("Todos os certificados elegíveis já foram emitidos");
-        return;
-      }
-
-      let success = 0;
-      for (const reg of eligible) {
-        const certCode = "CERT-" + Math.random().toString(36).substring(2, 10).toUpperCase();
-        const validationHash = crypto.randomUUID();
-        const { error } = await supabase.from("certificates").insert({
-          registration_id: reg.id,
-          certificate_code: certCode,
-          validation_hash: validationHash,
-        });
-        if (!error) {
-          await supabase.from("registrations").update({
-            certificate_status: "issued",
-            certificate_issued_at: new Date().toISOString(),
-          }).eq("id", reg.id);
-          success++;
-        }
-      }
-      toast.success(`${success} certificado(s) emitido(s)`);
       loadData();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      toast.error("Erro ao emitir certificados em lote");
+      toast.error(`Erro ao emitir certificados em lote: ${e?.message || e}`);
     } finally {
       setIssuingAll(false);
     }
@@ -251,11 +230,21 @@ export default function AdminCertificates() {
           </TabsList>
 
           <TabsContent value="certificates" className="space-y-4 mt-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h2 className="font-serif text-xl font-bold text-foreground">Certificados</h2>
               <Button onClick={issueAll} disabled={issuingAll} className="gap-2">
                 <Award className="h-4 w-4" /> {issuingAll ? "Emitindo..." : "Emitir Todos Elegíveis"}
               </Button>
+            </div>
+
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
             </div>
 
             {loading ? (
