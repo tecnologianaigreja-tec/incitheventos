@@ -30,7 +30,7 @@ export default function CheckinLoginPage() {
         .from("admin_users")
         .select("role")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (!adminUser || !["superadmin", "admin", "checkin_operator"].includes(adminUser.role)) {
         toast.error("Acesso não autorizado para check-in");

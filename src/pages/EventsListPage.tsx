@@ -45,9 +45,11 @@ interface RegistrationWithEvent {
   qr_token: string | null;
   checkin_status: string;
   order_id: string;
+  event_id: string;
   events: {
     title: string;
     slug: string;
+    status: string;
     start_date: string;
     end_date: string;
     start_time: string | null;
@@ -56,7 +58,13 @@ interface RegistrationWithEvent {
     address: string | null;
     city: string | null;
     state: string | null;
+    workload_hours: number | null;
   };
+}
+
+interface CertificateInfo {
+  certificate_code: string;
+  validation_hash: string;
 }
 
 export default function EventsListPage() {
@@ -72,6 +80,8 @@ export default function EventsListPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [registrations, setRegistrations] = useState<RegistrationWithEvent[] | null>(null);
   const [selectedReg, setSelectedReg] = useState<RegistrationWithEvent | null>(null);
+  const [certByRegId, setCertByRegId] = useState<Record<string, CertificateInfo>>({});
+  const [downloadingCertId, setDownloadingCertId] = useState<string | null>(null);
 
   // Batch split payment state
   const [splitDialogReg, setSplitDialogReg] = useState<RegistrationWithEvent | null>(null);
@@ -154,7 +164,7 @@ export default function EventsListPage() {
 
       const { data, error } = await supabase
         .from("registrations")
-        .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+        .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, event_id, events(title, slug, status, start_date, end_date, start_time, end_time, location_name, address, city, state, workload_hours)")
         .eq("cpf", digits)
         .in("registration_status", ["confirmed", "pending_payment"]);
 
@@ -175,6 +185,22 @@ export default function EventsListPage() {
       });
 
       setRegistrations(safeRegs);
+
+      // Busca certificados emitidos para essas inscrições
+      const regIds = safeRegs.map((r) => r.id);
+      if (regIds.length > 0) {
+        const { data: certs } = await supabase
+          .from("certificates")
+          .select("registration_id, certificate_code, validation_hash")
+          .in("registration_id", regIds);
+        const map: Record<string, CertificateInfo> = {};
+        (certs || []).forEach((c: any) => {
+          map[c.registration_id] = { certificate_code: c.certificate_code, validation_hash: c.validation_hash };
+        });
+        setCertByRegId(map);
+      } else {
+        setCertByRegId({});
+      }
     } catch (err) {
       console.error("Falha inesperada na consulta:", err);
       toast.error("Falha de conexão. Verifique sua internet e tente novamente.");
@@ -218,6 +244,49 @@ export default function EventsListPage() {
       setSplitLoading(null);
     }
   }
+  async function handleDownloadCertificate(reg: RegistrationWithEvent) {
+    const cert = certByRegId[reg.id];
+    if (!cert) return;
+    setDownloadingCertId(reg.id);
+    try {
+      const { data: template } = await supabase
+        .from("certificate_templates")
+        .select("background_url, field_positions")
+        .eq("event_id", reg.event_id)
+        .maybeSingle();
+
+      const backgroundUrl = (template as any)?.background_url as string | null | undefined;
+      const fieldPositions = ((template as any)?.field_positions as any[] | undefined) || [];
+
+      if (!backgroundUrl) {
+        toast.info("Certificado em preparação. Tente novamente em breve.");
+        return;
+      }
+
+      const { generateCertificatePdf } = await import("@/lib/certificatePdf");
+      const formatBR = (d: string) =>
+        new Date(d + "T12:00:00").toLocaleDateString("pt-BR");
+
+      const doc = await generateCertificatePdf({
+        backgroundUrl,
+        fieldPositions,
+        participantName: reg.full_name,
+        eventTitle: reg.events.title,
+        startDate: reg.events.start_date ? formatBR(reg.events.start_date) : "",
+        endDate: reg.events.end_date ? formatBR(reg.events.end_date) : "",
+        workloadHours: reg.events.workload_hours,
+        certificateCode: cert.certificate_code,
+        validationHash: cert.validation_hash,
+      });
+      doc.save(`certificado-${reg.full_name.replace(/\s+/g, "_")}.pdf`);
+    } catch (err) {
+      console.error("Erro ao baixar certificado:", err);
+      toast.error("Erro ao gerar PDF do certificado.");
+    } finally {
+      setDownloadingCertId(null);
+    }
+  }
+
   async function handleDownloadCredential(reg: RegistrationWithEvent) {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "mm", format: [105, 148] });
@@ -706,8 +775,8 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {/* Download button */}
-                        <div className="flex justify-center gap-3 pt-2">
+                        {/* Download buttons */}
+                        <div className="flex flex-wrap justify-center gap-3 pt-2">
                           <Button
                             variant="outline"
                             className="gap-2"
@@ -715,6 +784,16 @@ export default function EventsListPage() {
                           >
                             <Download className="h-4 w-4" /> Baixar Credencial
                           </Button>
+                          {certByRegId[selectedReg.id] && (
+                            <Button
+                              className="gap-2 gradient-gold text-white shadow-gold hover:opacity-90"
+                              onClick={() => handleDownloadCertificate(selectedReg)}
+                              disabled={downloadingCertId === selectedReg.id}
+                            >
+                              <Download className="h-4 w-4" />
+                              {downloadingCertId === selectedReg.id ? "Gerando..." : "Baixar Certificado"}
+                            </Button>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
