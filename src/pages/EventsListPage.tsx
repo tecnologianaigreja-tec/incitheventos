@@ -45,9 +45,11 @@ interface RegistrationWithEvent {
   qr_token: string | null;
   checkin_status: string;
   order_id: string;
+  event_id: string;
   events: {
     title: string;
     slug: string;
+    status: string;
     start_date: string;
     end_date: string;
     start_time: string | null;
@@ -56,7 +58,13 @@ interface RegistrationWithEvent {
     address: string | null;
     city: string | null;
     state: string | null;
+    workload_hours: number | null;
   };
+}
+
+interface CertificateInfo {
+  certificate_code: string;
+  validation_hash: string;
 }
 
 export default function EventsListPage() {
@@ -72,6 +80,8 @@ export default function EventsListPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [registrations, setRegistrations] = useState<RegistrationWithEvent[] | null>(null);
   const [selectedReg, setSelectedReg] = useState<RegistrationWithEvent | null>(null);
+  const [certByRegId, setCertByRegId] = useState<Record<string, CertificateInfo>>({});
+  const [downloadingCertId, setDownloadingCertId] = useState<string | null>(null);
 
   // Batch split payment state
   const [splitDialogReg, setSplitDialogReg] = useState<RegistrationWithEvent | null>(null);
