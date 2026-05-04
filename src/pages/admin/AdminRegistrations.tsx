@@ -395,19 +395,43 @@ export default function AdminRegistrations() {
     return false;
   }
 
+  // Semantic resolver: fixed column first, then any custom_fields key whose normalized form matches semantic tokens
+  const SEMANTIC_TOKENS: Record<string, string[]> = {
+    area: ["area"],
+    church_function: ["funcaoministerial", "funcao"],
+    church_role: ["departamento", "cargo", "ministerio"],
+    congregation: ["congregacao", "congregation", "igreja"],
+    phone: ["telefone", "celular", "whatsapp", "phone"],
+    birth_date: ["datanascimento", "nascimento", "birthdate"],
+  };
+  function normKeyLocal(v: string): string {
+    return (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+  function resolveFixed(r: RegistrationData, col: string): string {
+    const direct = ((r as any)[col] as string) || "";
+    if (direct) return direct;
+    const cf = ((r as any).custom_fields && typeof (r as any).custom_fields === "object") ? (r as any).custom_fields as Record<string, any> : {};
+    const tokens = SEMANTIC_TOKENS[col] || [normKeyLocal(col)];
+    for (const [k, v] of Object.entries(cf)) {
+      if (v == null || v === "") continue;
+      const nk = normKeyLocal(k);
+      if (tokens.some(t => nk.includes(t))) return String(v);
+    }
+    return "";
+  }
+
   // Available extra columns for the general (list) report
-  // Use getFieldValue so values resolve from the fixed column OR from custom_fields
   const EXTRA_FIXED_COLUMNS: { key: string; label: string; getValue: (r: RegistrationData) => string }[] = [
-    { key: "phone", label: "Telefone", getValue: r => getFieldValue(r, "phone") || r.phone || "" },
+    { key: "phone", label: "Telefone", getValue: r => resolveFixed(r, "phone") },
     { key: "birth_date", label: "Nascimento", getValue: r => {
-      const v = getFieldValue(r, "birth_date") || r.birth_date || "";
+      const v = resolveFixed(r, "birth_date");
       if (!v) return "";
       try { return new Date(v + (v.length === 10 ? "T00:00:00" : "")).toLocaleDateString("pt-BR"); } catch { return v; }
     } },
-    { key: "congregation", label: "Congregação", getValue: r => getFieldValue(r, "congregation") || "" },
-    { key: "area", label: "Área", getValue: r => getFieldValue(r, "area") || "" },
-    { key: "church_role", label: "Cargo", getValue: r => getFieldValue(r, "church_role") || "" },
-    { key: "church_function", label: "Função", getValue: r => getFieldValue(r, "church_function") || "" },
+    { key: "congregation", label: "Congregação", getValue: r => resolveFixed(r, "congregation") },
+    { key: "area", label: "Área", getValue: r => resolveFixed(r, "area") },
+    { key: "church_role", label: "Cargo", getValue: r => resolveFixed(r, "church_role") },
+    { key: "church_function", label: "Função", getValue: r => resolveFixed(r, "church_function") },
     { key: "registration_code", label: "Código", getValue: r => r.registration_code },
     { key: "registration_type", label: "Tipo", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
     { key: "registration_status", label: "Inscrição", getValue: r => r.registration_status },
@@ -416,12 +440,12 @@ export default function AdminRegistrations() {
     { key: "created_at", label: "Inscrito em", getValue: r => new Date(r.created_at).toLocaleDateString("pt-BR") },
   ];
 
-  // All groupable fields (for quantitative report) — also use getFieldValue fallback
+  // All groupable fields (for quantitative report) — semantic resolver fallback
   const GROUP_FIXED_FIELDS: GroupField[] = [
-    { key: "area", label: "Área", getValue: r => getFieldValue(r, "area") || "" },
-    { key: "church_role", label: "Cargo / Departamento", getValue: r => getFieldValue(r, "church_role") || "" },
-    { key: "church_function", label: "Função ministerial", getValue: r => getFieldValue(r, "church_function") || "" },
-    { key: "congregation", label: "Congregação", getValue: r => getFieldValue(r, "congregation") || "" },
+    { key: "area", label: "Área", getValue: r => resolveFixed(r, "area") },
+    { key: "church_role", label: "Cargo / Departamento", getValue: r => resolveFixed(r, "church_role") },
+    { key: "church_function", label: "Função ministerial", getValue: r => resolveFixed(r, "church_function") },
+    { key: "congregation", label: "Congregação", getValue: r => resolveFixed(r, "congregation") },
     { key: "registration_status", label: "Status da inscrição", getValue: r => r.registration_status },
     { key: "payment_status", label: "Status do pagamento", getValue: r => r.payment_status },
     { key: "registration_type", label: "Tipo (individual/lote)", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
