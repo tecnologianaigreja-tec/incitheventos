@@ -29,9 +29,17 @@ export default function AdminCertificates() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [issuingAll, setIssuingAll] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Reset page when event changes
-  useEffect(() => { setPage(1); }, [selectedEventId]);
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // Reset page when event or search changes
+  useEffect(() => { setPage(1); }, [selectedEventId, debouncedSearch]);
 
   async function loadEvents() {
     const { data } = await supabase.from("events").select("id, title, status, start_date, end_date, workload_hours");
