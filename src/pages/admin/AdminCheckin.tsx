@@ -17,6 +17,7 @@ import AdminPagination from "@/components/admin/AdminPagination";
 import CheckinRaffle from "@/components/CheckinRaffle";
 import { downloadCheckinReport, type CheckinReportRow } from "@/lib/checkinReportPdf";
 import { format } from "date-fns";
+import { getDefaultEventId } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 
@@ -146,12 +147,15 @@ export default function AdminCheckin() {
     (async () => {
       const { data } = await supabase
         .from("events")
-        .select("id, title, start_date, end_date, slug, status")
+        .select("id, title, start_date, end_date, slug, status, created_at")
         .in("status", ["published", "closed", "concluded"])
         .order("start_date", { ascending: false });
       const list = (data || []) as any[];
       setEvents(list);
-      if (list.length > 0 && !selectedEventId) setSelectedEventId(list[0].id);
+      if (list.length > 0 && !selectedEventId) {
+        const def = getDefaultEventId(list);
+        if (def) setSelectedEventId(def);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

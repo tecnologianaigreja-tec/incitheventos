@@ -5,17 +5,19 @@ import { formatCentsToBRL } from "@/lib/constants";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, CheckCircle2, Search, ShieldCheck, FileImage, X, Check } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, Search, ShieldCheck, FileImage, X, Check, XCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import AdminPagination from "@/components/admin/AdminPagination";
+import { getDefaultEventId } from "@/lib/utils";
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente", approved: "Aprovado", refused: "Recusado",
@@ -45,6 +47,10 @@ export default function AdminOrders() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  // Event filter
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+
   // Manual confirmation dialog (single)
   const [manualOrder, setManualOrder] = useState<OrderData | null>(null);
   const [manualReason, setManualReason] = useState("");
@@ -57,6 +63,11 @@ export default function AdminOrders() {
   const [bulkReason, setBulkReason] = useState("");
   const [bulkProof, setBulkProof] = useState("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+  // Cancel order
+  const [cancelOrder, setCancelOrder] = useState<OrderData | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
 
   // Proof review
   const [reviewProof, setReviewProof] = useState<PaymentProof | null>(null);
@@ -72,16 +83,32 @@ export default function AdminOrders() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset page on search change
-  useEffect(() => { setOrdersPage(1); }, [debouncedSearch]);
+  // Reset page on search/event change
+  useEffect(() => { setOrdersPage(1); }, [debouncedSearch, selectedEventId]);
+
+  // Load events list
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("events")
+        .select("id, title, status, start_date, created_at")
+        .order("created_at", { ascending: false });
+      const list = data || [];
+      setEvents(list);
+      const def = getDefaultEventId(list);
+      if (def) setSelectedEventId(def);
+    })();
+  }, []);
 
   async function load() {
+    if (!selectedEventId) { setLoading(false); return; }
     const from = (ordersPage - 1) * ORDERS_PAGE_SIZE;
     const to = from + ORDERS_PAGE_SIZE - 1;
 
     let ordersQuery = supabase
       .from("orders")
       .select("*", { count: "exact" })
+      .eq("event_id", selectedEventId)
       .order("created_at", { ascending: false });
 
     if (debouncedSearch) {
@@ -101,7 +128,7 @@ export default function AdminOrders() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [ordersPage, debouncedSearch]);
+  useEffect(() => { if (selectedEventId) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [ordersPage, debouncedSearch, selectedEventId]);
 
   async function callFunction(name: string, payload: Record<string, unknown>, withAuth = false) {
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -205,6 +232,28 @@ export default function AdminOrders() {
     } finally { setBulkSubmitting(false); }
   }
 
+  function openCancelDialog(order: OrderData) {
+    setCancelOrder(order);
+    setCancelReason("");
+  }
+
+  async function submitCancelOrder() {
+    if (!cancelOrder) return;
+    if (cancelReason.trim().length < 5) { toast.error("Motivo precisa ter ao menos 5 caracteres."); return; }
+    setCancelSubmitting(true);
+    try {
+      const { ok, data } = await callFunction("cancel-order", {
+        order_id: cancelOrder.id,
+        reason: cancelReason.trim(),
+      }, true);
+      if (!ok) { toast.error(data.error || "Falha ao cancelar."); return; }
+      toast.success(`Pedido ${cancelOrder.order_code} cancelado.`);
+      setCancelOrder(null); await load();
+    } catch (err) {
+      console.error(err); toast.error("Falha de conexão.");
+    } finally { setCancelSubmitting(false); }
+  }
+
   async function openReview(proof: PaymentProof) {
     setReviewProof(proof);
     setReviewNote("");
@@ -252,11 +301,26 @@ export default function AdminOrders() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="font-serif text-xl font-bold text-foreground">Pedidos</h2>
-        <p className="text-sm text-muted-foreground">
-          Verifique pendentes automaticamente, confirme manualmente ou aprove comprovantes enviados pelos clientes.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h2 className="font-serif text-xl font-bold text-foreground">Pedidos</h2>
+          <p className="text-sm text-muted-foreground">
+            Verifique pendentes automaticamente, confirme manualmente ou aprove comprovantes enviados pelos clientes.
+          </p>
+        </div>
+        <div className="w-full sm:w-72 space-y-1">
+          <Label>Evento</Label>
+          <Select value={selectedEventId || undefined} onValueChange={setSelectedEventId}>
+            <SelectTrigger><SelectValue placeholder="Selecione um evento" /></SelectTrigger>
+            <SelectContent>
+              {events.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.title} {e.status === "published" ? "• Publicado" : e.status === "closed" ? "• Encerrado" : e.status === "concluded" ? "• Concluído" : "• Rascunho"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Tabs defaultValue="orders">
@@ -353,21 +417,29 @@ export default function AdminOrders() {
                         {new Date(o.created_at).toLocaleDateString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right">
-                        {isPending ? (
-                          <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="outline" onClick={() => reconcileOne(o)} disabled={reconcilingId === o.id} className="gap-1">
-                              {reconcilingId === o.id
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <CheckCircle2 className="h-3 w-3" />}
-                              Verificar
+                        <div className="flex justify-end gap-1">
+                          {isPending && (
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => reconcileOne(o)} disabled={reconcilingId === o.id} className="gap-1">
+                                {reconcilingId === o.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <CheckCircle2 className="h-3 w-3" />}
+                                Verificar
+                              </Button>
+                              <Button size="sm" variant="default" onClick={() => openManualDialog(o)} className="gap-1">
+                                <ShieldCheck className="h-3 w-3" /> Confirmar
+                              </Button>
+                            </>
+                          )}
+                          {o.payment_status !== "canceled" && o.payment_status !== "refunded" && (
+                            <Button size="sm" variant="destructive" onClick={() => openCancelDialog(o)} className="gap-1">
+                              <XCircle className="h-3 w-3" /> Cancelar
                             </Button>
-                            <Button size="sm" variant="default" onClick={() => openManualDialog(o)} className="gap-1">
-                              <ShieldCheck className="h-3 w-3" /> Confirmar
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                          )}
+                          {o.payment_status === "canceled" && (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -543,6 +615,42 @@ export default function AdminOrders() {
             <Button onClick={() => reviewAction("approve")} disabled={reviewSubmitting} className="gap-2">
               {reviewSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Aprovar e confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel order */}
+      <Dialog open={!!cancelOrder} onOpenChange={(o) => !o && setCancelOrder(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancelar pedido</DialogTitle>
+            <DialogDescription>
+              Esta ação cancela o pedido e marca todas as inscrições vinculadas como canceladas.
+              O participante precisará realizar uma nova inscrição para o evento.
+              {cancelOrder && (
+                <span className="mt-2 block text-foreground">
+                  <strong>{cancelOrder.order_code}</strong> · {cancelOrder.buyer_name} · {formatCentsToBRL(cancelOrder.total_price_cents)}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cancel-reason">Motivo do cancelamento *</Label>
+              <Textarea
+                id="cancel-reason"
+                placeholder="Ex: Solicitação do participante via WhatsApp"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelOrder(null)} disabled={cancelSubmitting}>Voltar</Button>
+            <Button variant="destructive" onClick={submitCancelOrder} disabled={cancelSubmitting}>
+              {cancelSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Cancelar pedido
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -19,6 +19,7 @@ import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 import AdminPagination from "@/components/admin/AdminPagination";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import { getDefaultEventId } from "@/lib/utils";
 
 const REG_PAGE_SIZE = 50;
 
@@ -93,9 +94,16 @@ export default function AdminRegistrations() {
   async function loadEvents() {
     const { data } = await supabase
       .from("events")
-      .select("id, title, start_date, end_date, start_time, end_time, location_name, city, state, unit_price_cents, max_participants, workload_hours")
+      .select("id, title, status, start_date, end_date, start_time, end_time, location_name, city, state, unit_price_cents, max_participants, workload_hours, created_at")
       .order("start_date", { ascending: false });
-    if (data) setEvents(data as EventBasic[]);
+    if (data) {
+      setEvents(data as unknown as EventBasic[]);
+      // Default to published event (or most recent) instead of "all"
+      if (selectedEventId === "all") {
+        const def = getDefaultEventId(data as any);
+        if (def) setSelectedEventId(def);
+      }
+    }
   }
 
   function applyBaseFilters(q: any) {

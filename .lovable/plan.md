@@ -1,56 +1,65 @@
-## Contexto
+# Plano: Filtro por Evento + Cancelamento de Pedidos
 
-Na aba **Certificados** (`AdminCertificates.tsx`):
-- Hoje só há paginação (50 por página) — sem busca por nome, dificultando localizar um participante.
-- Existem **605 inscritos elegíveis** (pagos + checked-in) no evento, mas apenas **336 certificados** foram criados. O dashboard está correto — quem está errado é o processo de emissão em lote.
+## 1. Seletor de evento global (prioridade no publicado)
 
-### Causa do "Emitir Todos Elegíveis" parar em 336
+Criar uma função utilitária `getDefaultEventId(events)` em `src/lib/utils.ts` que retorna:
+1. Primeiro evento com `status = 'published'` (ordenado por `start_date` desc)
+2. Senão, o evento mais recente (`closed`/`concluded`/`draft`) por `created_at` desc
 
-O loop roda no navegador, fazendo um `INSERT` por participante de forma sequencial (~605 round-trips). Qualquer perda de foco da aba, refresh, navegação, ou falha intermitente de rede interrompe o processo silenciosamente — o toast final só conta o que deu certo até ali. Não há retomada nem retry. A query `existingCertIds` em chunks de 500 IDs também aumenta o tempo total antes de sequer começar a emitir.
+Aplicar essa lógica de "evento padrão" em todas as telas administrativas que listam dados:
 
-## Mudanças
+- **`AdminDashboard.tsx`**: 
+  - Adicionar estado `selectedEventId` + carregar lista de eventos.
+  - Renderizar `<Select>` no topo (ao lado do título "Visão Geral").
+  - Filtrar todas as queries (`registrations`, `orders`, `certificates`) por `event_id`.
+  - Inicializar com `getDefaultEventId(events)`.
 
-### 1. Busca por nome (`src/pages/admin/AdminCertificates.tsx`)
+- **`AdminOrders.tsx`**:
+  - Adicionar `selectedEventId` + `<Select>` de evento no topo da aba.
+  - Adicionar `.eq("event_id", selectedEventId)` na query de orders.
+  - Inicializar com `getDefaultEventId`.
 
-- Adicionar um `<Input>` de busca acima da tabela de certificados, com estado `searchTerm`.
-- Quando `searchTerm` tiver ≥ 2 caracteres, alterar a query Supabase para incluir `.ilike('full_name', '%termo%')` (mantendo paginação e contagem).
-- Resetar `page = 1` ao alterar o termo (debounce simples de 300 ms).
-- Não muda nada no fluxo de emissão individual / download de PDF — apenas filtra a listagem.
+- **`AdminRegistrations.tsx`** e **`AdminCheckin.tsx`** e **`AdminCertificates.tsx`**:
+  - Já possuem seletor; apenas mudar a inicialização de "primeiro evento da lista" para `getDefaultEventId(events)` (priorizando publicado).
 
-### 2. Emissão em lote confiável via Edge Function
+## 2. Cancelar pedido (admin) + bloqueio de retomada
 
-Criar nova função `supabase/functions/issue-all-certificates/index.ts`:
+### Backend
 
-- Recebe `{ event_id }`.
-- Valida JWT do chamador e confirma role `admin`/`superadmin` via `admin_users`.
-- Valida que o evento está `closed` ou `concluded` e que existe template com `background_url`.
-- Usando `service_role`:
-  - Busca todas as `registrations` elegíveis (`payment_status='approved'` AND `checkin_status='checked_in'`) do evento.
-  - Busca certificados já existentes para esses IDs.
-  - Faz **um único `INSERT` em massa** dos certificados faltantes (`certificate_code` = `'CERT-' + crypto.randomUUID().slice(0,8).toUpperCase()`, `validation_hash` = `crypto.randomUUID()`).
-  - Faz **um único `UPDATE`** em `registrations` para `certificate_status='issued'` e `certificate_issued_at=now()` para os IDs recém-criados.
-  - Em caso de colisão de `certificate_code` (raro), faz retry só dos remanescentes (até 3 vezes).
-- Retorna `{ created, skipped, total_eligible }`.
-- Registrar no `supabase/config.toml` com `verify_jwt = true`.
+Nova Edge Function **`cancel-order`** (`supabase/functions/cancel-order/index.ts`):
+- Recebe `{ order_id, reason }`. Requer auth admin (valida via `is_admin`).
+- Atualiza `orders.payment_status = 'canceled'`, `canceled_at = now()`.
+- Atualiza `registrations` vinculadas (`order_id = X`) para `registration_status = 'canceled'`, `payment_status = 'canceled'`.
+- Registra entrada em `audit_logs` (`action = 'order_canceled'`, `details = { reason }`).
 
-No frontend (`AdminCertificates.tsx`):
+### Frontend — `AdminOrders.tsx`
 
-- `issueAll()` passa a chamar `supabase.functions.invoke('issue-all-certificates', { body: { event_id } })`.
-- Mostra o resumo (`X certificado(s) emitido(s), Y já existiam`) e chama `loadData()`.
-- Manter o `issueCertificate(reg)` individual atual intocado (continua funcionando para casos pontuais).
+- Adicionar botão **"Cancelar"** (ícone `XCircle`, variant destructive) na coluna Ações para pedidos com status `pending` ou `approved`.
+- Abrir `AlertDialog` pedindo motivo (textarea, mín 5 chars).
+- Chamar `cancel-order` e recarregar lista.
 
-### 3. Reprocessar os 269 faltantes
+### Bloqueio de retomada — busca pública por CPF
 
-Após o deploy, basta o admin clicar em **Emitir Todos Elegíveis** novamente — agora server-side e atômico — para preencher os ~269 que faltam. O dashboard refletirá os 605.
+Localizar a tela de "Consulta de inscrição" pública (provavelmente `EventsListPage` ou `RegistrationPage` com lookup por CPF). Verificar arquivo `src/features/.../publicLookup` ou similar via `rg "CPF" src/pages`.
 
-## Garantias de não-regressão
+Comportamento atual: inscrição com `pending_payment` permite retomar pagamento.
+**Mudança**: se a inscrição mais recente do CPF naquele evento estiver com `registration_status = 'canceled'`, **não** mostrar opção de retomada. Mostrar mensagem: *"Sua inscrição anterior foi cancelada. Faça uma nova inscrição."* + botão para `/evento/:slug` (formulário novo).
 
-- Emissão individual, download de PDF, editor de template, paginação e contagem permanecem inalterados.
-- A busca é puramente aditiva (input + filtro `ilike`).
-- A Edge Function só substitui o loop client-side de "emitir todos"; o resto da UI continua igual.
+Adicionalmente, a regra existente `prevent_duplicate_active_registration` já permite nova inscrição quando a anterior está `canceled` (não está em `pending_payment`/`confirmed`), então o re-cadastro funcionará sem migração de schema.
+
+## 3. Garantias de não-regressão
+
+- Não alterar schemas nem RLS (apenas inserts via Edge Function com service role).
+- Seletores de evento já existentes em Registrations/Checkin/Certificates ficam intactos — só muda o valor inicial.
+- Webhook InfinitePay continua sendo a fonte da verdade; cancelamento manual apenas marca `canceled` e não impede um eventual webhook posterior de re-aprovar (mas como pedido cancelado normalmente não tem pagamento aprovado, é seguro).
 
 ## Arquivos afetados
 
-- `src/pages/admin/AdminCertificates.tsx` (busca + chamada à edge function)
-- `supabase/functions/issue-all-certificates/index.ts` (nova)
-- `supabase/config.toml` (registrar a função)
+- `src/lib/utils.ts` — nova helper `getDefaultEventId`
+- `src/pages/admin/AdminDashboard.tsx` — seletor + filtros por evento
+- `src/pages/admin/AdminOrders.tsx` — seletor + botão Cancelar
+- `src/pages/admin/AdminRegistrations.tsx` — init default
+- `src/pages/admin/AdminCheckin.tsx` — init default
+- `src/pages/admin/AdminCertificates.tsx` — init default
+- `supabase/functions/cancel-order/index.ts` — nova função
+- Tela de consulta pública por CPF — bloqueio de retomada quando cancelado

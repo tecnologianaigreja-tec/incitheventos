@@ -24,3 +24,9 @@ verify_jwt = false
 [functions.bulk-confirm-orders]
 verify_jwt = false
 
+[functions.cancel-order]
+verify_jwt = false
+
+[functions.issue-all-certificates]
+verify_jwt = false
+
