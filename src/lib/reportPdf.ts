@@ -236,65 +236,69 @@ export function generateEventReportPdf({ event, registrations, filterDescription
 
   sectionTitle("Lista de Inscritos");
 
-  // Table header
-  doc.setFillColor(240, 242, 248);
-  doc.rect(margin, y - 4, contentW, 7, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...navy);
+  // Build dynamic columns: fixed defaults + extras
+  type Col = { label: string; weight: number; getValue: (r: RegistrationData) => string };
+  const fixedCols: Col[] = [
+    { label: "Nome", weight: 3, getValue: r => r.full_name },
+    { label: "E-mail", weight: 3, getValue: r => r.email },
+    { label: "CPF", weight: 1.6, getValue: r => r.cpf },
+    { label: "Pagamento", weight: 1.2, getValue: r => r.payment_status === "approved" ? "Pago" : r.payment_status === "pending" ? "Pendente" : r.payment_status },
+    { label: "Check-in", weight: 0.8, getValue: r => r.checkin_status === "checked_in" ? "✓" : "—" },
+  ];
+  const extraCols: Col[] = extraColumns.map(c => ({ label: c.label, weight: c.weight ?? 1.5, getValue: c.getValue }));
+  const cols = [...fixedCols, ...extraCols];
 
-  const colX = {
-    name: margin + 2,
-    email: margin + 52,
-    cpf: margin + 108,
-    payment: margin + 138,
-    checkin: margin + 158,
-  };
+  const totalWeight = cols.reduce((s, c) => s + c.weight, 0);
+  const colWidths = cols.map(c => (c.weight / totalWeight) * contentW);
+  const colX: number[] = [];
+  {
+    let x = margin + 2;
+    for (const w of colWidths) { colX.push(x); x += w; }
+  }
 
-  doc.text("Nome", colX.name, y);
-  doc.text("E-mail", colX.email, y);
-  doc.text("CPF", colX.cpf, y);
-  doc.text("Pagamento", colX.payment, y);
-  doc.text("Check-in", colX.checkin, y);
-  y += 6;
+  // Auto font scaling for many columns
+  const headerFont = cols.length > 6 ? 7.5 : 8;
+  const bodyFont = cols.length > 7 ? 6.5 : cols.length > 5 ? 7 : 7.5;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...dark);
+  function drawTableHeader() {
+    doc.setFillColor(240, 242, 248);
+    doc.rect(margin, y - 4, contentW, 7, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(headerFont);
+    doc.setTextColor(...navy);
+    cols.forEach((c, i) => doc.text(c.label, colX[i], y));
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(bodyFont);
+    doc.setTextColor(...dark);
+  }
+
+  drawTableHeader();
+
+  function fitText(text: string, maxW: number): string {
+    const t = text || "";
+    if (doc.getTextWidth(t) <= maxW) return t;
+    let lo = 0, hi = t.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const candidate = t.substring(0, mid) + "…";
+      if (doc.getTextWidth(candidate) <= maxW) lo = mid + 1;
+      else hi = mid;
+    }
+    return t.substring(0, Math.max(0, lo - 1)) + "…";
+  }
 
   for (const r of registrations) {
-    if (y > 280) {
+    if (y > pageH - 18) {
       doc.addPage();
       y = 20;
-      // Repeat header
-      doc.setFillColor(240, 242, 248);
-      doc.rect(margin, y - 4, contentW, 7, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...navy);
-      doc.text("Nome", colX.name, y);
-      doc.text("E-mail", colX.email, y);
-      doc.text("CPF", colX.cpf, y);
-      doc.text("Pagamento", colX.payment, y);
-      doc.text("Check-in", colX.checkin, y);
-      y += 6;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(...dark);
+      drawTableHeader();
     }
-
-    const name = r.full_name.length > 28 ? r.full_name.substring(0, 26) + "…" : r.full_name;
-    const email = r.email.length > 30 ? r.email.substring(0, 28) + "…" : r.email;
-    const payLabel = r.payment_status === "approved" ? "Pago" : r.payment_status === "pending" ? "Pendente" : r.payment_status;
-    const checkinLabel = r.checkin_status === "checked_in" ? "✓" : "—";
-
-    doc.text(name, colX.name, y);
-    doc.text(email, colX.email, y);
-    doc.text(r.cpf, colX.cpf, y);
-    doc.text(payLabel, colX.payment, y);
-    doc.text(checkinLabel, colX.checkin, y);
-
-    // Light separator
+    cols.forEach((c, i) => {
+      const raw = String(c.getValue(r) ?? "");
+      const cellW = colWidths[i] - 3;
+      doc.text(fitText(raw, cellW), colX[i], y);
+    });
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.15);
     doc.line(margin, y + 2, pageW - margin, y + 2);
@@ -302,13 +306,14 @@ export function generateEventReportPdf({ event, registrations, filterDescription
   }
 
   // ---- Footer ----
+  const footerY = pageH - 8;
   const pageCount = doc.getNumberOfPages();
   for (let p = 1; p <= pageCount; p++) {
     doc.setPage(p);
     doc.setFontSize(7);
     doc.setTextColor(...muted);
-    doc.text(`Página ${p} de ${pageCount}`, pageW / 2, 290, { align: "center" });
-    doc.text(`Relatório: ${event.title}`, margin, 290);
+    doc.text(`Página ${p} de ${pageCount}`, pageW / 2, footerY, { align: "center" });
+    doc.text(`Relatório: ${event.title}`, margin, footerY);
   }
 
   return doc;
