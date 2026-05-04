@@ -47,6 +47,10 @@ export default function AdminOrders() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  // Event filter
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+
   // Manual confirmation dialog (single)
   const [manualOrder, setManualOrder] = useState<OrderData | null>(null);
   const [manualReason, setManualReason] = useState("");
@@ -59,6 +63,11 @@ export default function AdminOrders() {
   const [bulkReason, setBulkReason] = useState("");
   const [bulkProof, setBulkProof] = useState("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+  // Cancel order
+  const [cancelOrder, setCancelOrder] = useState<OrderData | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
 
   // Proof review
   const [reviewProof, setReviewProof] = useState<PaymentProof | null>(null);
