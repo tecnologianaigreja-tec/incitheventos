@@ -16,6 +16,7 @@ import { generateCertificatePdf, type FieldPosition } from "@/lib/certificatePdf
 import { format } from "date-fns";
 import AdminPagination from "@/components/admin/AdminPagination";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import { getDefaultEventId } from "@/lib/utils";
 
 const CERTS_PAGE_SIZE = 50;
 
