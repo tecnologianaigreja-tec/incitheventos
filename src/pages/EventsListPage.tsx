@@ -244,6 +244,49 @@ export default function EventsListPage() {
       setSplitLoading(null);
     }
   }
+  async function handleDownloadCertificate(reg: RegistrationWithEvent) {
+    const cert = certByRegId[reg.id];
+    if (!cert) return;
+    setDownloadingCertId(reg.id);
+    try {
+      const { data: template } = await supabase
+        .from("certificate_templates")
+        .select("background_url, field_positions")
+        .eq("event_id", reg.event_id)
+        .maybeSingle();
+
+      const backgroundUrl = (template as any)?.background_url as string | null | undefined;
+      const fieldPositions = ((template as any)?.field_positions as any[] | undefined) || [];
+
+      if (!backgroundUrl) {
+        toast.info("Certificado em preparação. Tente novamente em breve.");
+        return;
+      }
+
+      const { generateCertificatePdf } = await import("@/lib/certificatePdf");
+      const formatBR = (d: string) =>
+        new Date(d + "T12:00:00").toLocaleDateString("pt-BR");
+
+      const doc = await generateCertificatePdf({
+        backgroundUrl,
+        fieldPositions,
+        participantName: reg.full_name,
+        eventTitle: reg.events.title,
+        startDate: reg.events.start_date ? formatBR(reg.events.start_date) : "",
+        endDate: reg.events.end_date ? formatBR(reg.events.end_date) : "",
+        workloadHours: reg.events.workload_hours,
+        certificateCode: cert.certificate_code,
+        validationHash: cert.validation_hash,
+      });
+      doc.save(`certificado-${reg.full_name.replace(/\s+/g, "_")}.pdf`);
+    } catch (err) {
+      console.error("Erro ao baixar certificado:", err);
+      toast.error("Erro ao gerar PDF do certificado.");
+    } finally {
+      setDownloadingCertId(null);
+    }
+  }
+
   async function handleDownloadCredential(reg: RegistrationWithEvent) {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF({ unit: "mm", format: [105, 148] });
