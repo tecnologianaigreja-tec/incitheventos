@@ -408,16 +408,17 @@ export default function AdminRegistrations() {
     return (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   }
   function resolveFixed(r: RegistrationData, col: string): string {
-    const direct = ((r as any)[col] as string) || "";
-    if (direct) return direct;
+    // 1. custom_fields PRIMEIRO (fonte de verdade dos formulários dinâmicos)
     const cf = ((r as any).custom_fields && typeof (r as any).custom_fields === "object") ? (r as any).custom_fields as Record<string, any> : {};
     const tokens = SEMANTIC_TOKENS[col] || [normKeyLocal(col)];
     for (const [k, v] of Object.entries(cf)) {
       if (v == null || v === "") continue;
-      const nk = normKeyLocal(k);
+      const nk = normKeyLocal(k.trim());
       if (tokens.some(t => nk.includes(t))) return String(v);
     }
-    return "";
+    // 2. Fallback: coluna fixa
+    const direct = ((r as any)[col] as string) || "";
+    return direct || "";
   }
 
   // Available extra columns for the general (list) report
