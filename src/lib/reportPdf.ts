@@ -15,10 +15,19 @@ interface EventInfo {
   workload_hours: number | null;
 }
 
+export interface ExtraReportColumn {
+  key: string;
+  label: string;
+  getValue: (r: RegistrationData) => string;
+  /** Optional relative weight for column width calculation (default 1) */
+  weight?: number;
+}
+
 interface ReportOptions {
   event: EventInfo;
   registrations: RegistrationData[];
   filterDescription: string | null;
+  extraColumns?: ExtraReportColumn[];
 }
 
 function fmtDate(dateStr: string) {
