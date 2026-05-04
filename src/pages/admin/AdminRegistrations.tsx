@@ -67,6 +67,12 @@ export default function AdminRegistrations() {
     jaImpressos: RegistrationData[];
     semQr: number;
   }>(null);
+  const [generalReportDialog, setGeneralReportDialog] = useState(false);
+  const [groupedReportDialog, setGroupedReportDialog] = useState(false);
+  const [selectedExtraCols, setSelectedExtraCols] = useState<Set<string>>(new Set());
+  const [groupByKey, setGroupByKey] = useState<string>("");
+  const [subGroupByKey, setSubGroupByKey] = useState<string>("__none__");
+  const [groupScope, setGroupScope] = useState<GroupScope>("all");
 
   // Debounce search
   useEffect(() => {
