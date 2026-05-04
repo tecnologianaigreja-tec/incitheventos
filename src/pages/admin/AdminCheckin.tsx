@@ -17,6 +17,7 @@ import AdminPagination from "@/components/admin/AdminPagination";
 import CheckinRaffle from "@/components/CheckinRaffle";
 import { downloadCheckinReport, type CheckinReportRow } from "@/lib/checkinReportPdf";
 import { format } from "date-fns";
+import { getDefaultEventId } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 
