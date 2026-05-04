@@ -367,78 +367,159 @@ export default function AdminRegistrations() {
   // (custom_fields jsonb) filters are applied here over the current page.
   const filtered = applyDynamicFilters(registrations, dynamicFilters);
 
-  async function handleDownloadReport() {
-    const eventData = selectedEventId !== "all"
-      ? events.find(e => e.id === selectedEventId)
-      : null;
+  // Available extra columns for the general (list) report
+  const EXTRA_FIXED_COLUMNS: { key: string; label: string; getValue: (r: RegistrationData) => string }[] = [
+    { key: "phone", label: "Telefone", getValue: r => r.phone || "" },
+    { key: "birth_date", label: "Nascimento", getValue: r => r.birth_date ? new Date(r.birth_date + "T00:00:00").toLocaleDateString("pt-BR") : "" },
+    { key: "congregation", label: "Congregação", getValue: r => r.congregation || "" },
+    { key: "area", label: "Área", getValue: r => r.area || "" },
+    { key: "church_role", label: "Cargo", getValue: r => r.church_role || "" },
+    { key: "church_function", label: "Função", getValue: r => r.church_function || "" },
+    { key: "registration_code", label: "Código", getValue: r => r.registration_code },
+    { key: "registration_type", label: "Tipo", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
+    { key: "registration_status", label: "Inscrição", getValue: r => r.registration_status },
+    { key: "label_printed_at", label: "Etiqueta", getValue: r => r.label_printed_at ? "Impressa" : "—" },
+    { key: "material_delivered_at", label: "Material", getValue: r => r.material_delivered_at ? "Entregue" : "—" },
+    { key: "created_at", label: "Inscrito em", getValue: r => new Date(r.created_at).toLocaleDateString("pt-BR") },
+  ];
 
-    if (!eventData && selectedEventId !== "all") {
-      toast.error("Evento não encontrado");
-      return;
+  // All groupable fields (for quantitative report)
+  const GROUP_FIXED_FIELDS: GroupField[] = [
+    { key: "area", label: "Área", getValue: r => r.area || "" },
+    { key: "church_role", label: "Cargo", getValue: r => r.church_role || "" },
+    { key: "church_function", label: "Função ministerial", getValue: r => r.church_function || "" },
+    { key: "congregation", label: "Congregação", getValue: r => r.congregation || "" },
+    { key: "registration_status", label: "Status da inscrição", getValue: r => r.registration_status },
+    { key: "payment_status", label: "Status do pagamento", getValue: r => r.payment_status },
+    { key: "registration_type", label: "Tipo (individual/lote)", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
+    { key: "checkin_status", label: "Check-in (sim/não)", getValue: r => r.checkin_status === "checked_in" ? "Sim" : "Não" },
+  ];
+
+  function getDynamicGroupFields(): GroupField[] {
+    return customFields.map(f => ({
+      key: `cf:${f.field_key}`,
+      label: f.field_label,
+      getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
+    }));
+  }
+
+  function getDynamicExtraColumns(): { key: string; label: string; getValue: (r: RegistrationData) => string }[] {
+    return customFields.map(f => ({
+      key: `cf:${f.field_key}`,
+      label: f.field_label,
+      getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
+    }));
+  }
+
+  function buildEventInfoForReport() {
+    const eventData = selectedEventId !== "all" ? events.find(e => e.id === selectedEventId) : null;
+    const allEventsPrice = events.length > 0
+      ? events.reduce((sum, e) => sum + e.unit_price_cents, 0) / events.length
+      : 0;
+    return eventData || {
+      title: "Todos os Eventos",
+      start_date: events.length > 0 ? events[events.length - 1].start_date : new Date().toISOString().substring(0, 10),
+      end_date: events.length > 0 ? events[0].start_date : new Date().toISOString().substring(0, 10),
+      start_time: null,
+      end_time: null,
+      location_name: null,
+      city: null,
+      state: null,
+      unit_price_cents: Math.round(allEventsPrice),
+      max_participants: null,
+      workload_hours: null,
+    };
+  }
+
+  function buildFilterDescription(): string | null {
+    const filterParts: string[] = [];
+    if (search) filterParts.push(`Busca: "${search}"`);
+    if (statusFilter !== "all") {
+      const statusLabels: Record<string, string> = {
+        pending_payment: "Pendente", confirmed: "Confirmado", canceled: "Cancelado",
+      };
+      filterParts.push(`Status: ${statusLabels[statusFilter] || statusFilter}`);
     }
+    for (const f of dynamicFilters) filterParts.push(`${f.fieldLabel}: ${f.value}`);
+    return filterParts.length > 0 ? filterParts.join(" | ") : null;
+  }
 
+  async function fetchAllForReport(): Promise<RegistrationData[] | null> {
     if (totalCount === 0) {
       toast.error("Nenhum inscrito para gerar relatório");
-      return;
+      return null;
     }
+    const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
+    const allFiltered = applyDynamicFilters(all, dynamicFilters);
+    if (allFiltered.length === 0) {
+      toast.error("Nenhum inscrito para gerar relatório");
+      return null;
+    }
+    return allFiltered;
+  }
 
+  async function handleDownloadReport(extraColsKeys?: Set<string>) {
     setGeneratingReport(true);
-
     try {
-      // Fetch all matching registrations across pages
-      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
-      const allFiltered = applyDynamicFilters(all, dynamicFilters);
+      const allFiltered = await fetchAllForReport();
+      if (!allFiltered) return;
+      const eventInfo = buildEventInfoForReport();
 
-      if (allFiltered.length === 0) {
-        toast.error("Nenhum inscrito para gerar relatório");
-        return;
-      }
-
-      // Build filter description
-      const filterParts: string[] = [];
-      if (search) filterParts.push(`Busca: "${search}"`);
-      if (statusFilter !== "all") {
-        const statusLabels: Record<string, string> = {
-          pending_payment: "Pendente", confirmed: "Confirmado", canceled: "Cancelado",
-        };
-        filterParts.push(`Status: ${statusLabels[statusFilter] || statusFilter}`);
-      }
-      for (const f of dynamicFilters) {
-        filterParts.push(`${f.fieldLabel}: ${f.value}`);
-      }
-
-      // When "all events", compute a representative price from available events
-      const allEventsPrice = events.length > 0
-        ? events.reduce((sum, e) => sum + e.unit_price_cents, 0) / events.length
-        : 0;
-
-      const eventInfo = eventData || {
-        title: "Todos os Eventos",
-        start_date: events.length > 0 ? events[events.length - 1].start_date : new Date().toISOString().substring(0, 10),
-        end_date: events.length > 0 ? events[0].start_date : new Date().toISOString().substring(0, 10),
-        start_time: null,
-        end_time: null,
-        location_name: null,
-        city: null,
-        state: null,
-        unit_price_cents: Math.round(allEventsPrice),
-        max_participants: null,
-        workload_hours: null,
-      };
+      const allExtras = [...EXTRA_FIXED_COLUMNS, ...getDynamicExtraColumns()];
+      const extraColumns: ExtraReportColumn[] = extraColsKeys
+        ? allExtras.filter(c => extraColsKeys.has(c.key))
+        : [];
 
       const doc = generateEventReportPdf({
         event: eventInfo,
         registrations: allFiltered,
-        filterDescription: filterParts.length > 0 ? filterParts.join(" | ") : null,
+        filterDescription: buildFilterDescription(),
+        extraColumns,
       });
-
-      doc.save(`relatorio-${eventData?.title.replace(/\s+/g, "-").toLowerCase() || "geral"}-${new Date().toISOString().substring(0, 10)}.pdf`);
+      const baseName = (eventInfo.title || "geral").replace(/\s+/g, "-").toLowerCase();
+      doc.save(`relatorio-${baseName}-${new Date().toISOString().substring(0, 10)}.pdf`);
       toast.success("Relatório gerado com sucesso!");
+      setGeneralReportDialog(false);
     } catch (err) {
       console.error(err);
       toast.error("Erro ao gerar relatório");
     }
+    setGeneratingReport(false);
+  }
 
+  async function handleDownloadGroupedReport() {
+    if (!groupByKey) {
+      toast.error("Escolha um campo para agrupar");
+      return;
+    }
+    const allGroupFields = [...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()];
+    const gField = allGroupFields.find(f => f.key === groupByKey);
+    if (!gField) { toast.error("Campo de agrupamento inválido"); return; }
+    const sgField = subGroupByKey && subGroupByKey !== "__none__"
+      ? allGroupFields.find(f => f.key === subGroupByKey) || null
+      : null;
+
+    setGeneratingReport(true);
+    try {
+      const allFiltered = await fetchAllForReport();
+      if (!allFiltered) return;
+      const eventInfo = buildEventInfoForReport();
+      const doc = generateGroupedReportPdf({
+        event: eventInfo,
+        registrations: allFiltered,
+        filterDescription: buildFilterDescription(),
+        groupBy: gField,
+        subGroupBy: sgField,
+        scope: groupScope,
+      });
+      const baseName = (eventInfo.title || "geral").replace(/\s+/g, "-").toLowerCase();
+      doc.save(`relatorio-quantitativo-${baseName}-${new Date().toISOString().substring(0, 10)}.pdf`);
+      toast.success("Relatório quantitativo gerado!");
+      setGroupedReportDialog(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao gerar relatório quantitativo");
+    }
     setGeneratingReport(false);
   }
 
