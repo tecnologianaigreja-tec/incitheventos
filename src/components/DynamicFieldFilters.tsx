@@ -55,15 +55,17 @@ function resolveKnownField(fieldKey: string): keyof RegistrationData | undefined
 }
 
 function findInCustomFields(customFields: Record<string, any>, fieldKey: string): string {
-  if (customFields[fieldKey] != null && customFields[fieldKey] !== "") {
-    return String(customFields[fieldKey]);
+  // Literal match (with trim tolerance)
+  for (const [key, value] of Object.entries(customFields)) {
+    if (value == null || value === "") continue;
+    if (key === fieldKey || key.trim() === fieldKey.trim()) return String(value);
   }
 
   const normalizedTarget = normalizeKey(fieldKey);
 
   for (const [key, value] of Object.entries(customFields)) {
     if (value == null || value === "") continue;
-    const normalizedKey = normalizeKey(key);
+    const normalizedKey = normalizeKey(key.trim());
     if (normalizedKey === normalizedTarget || normalizedKey.includes(normalizedTarget) || normalizedTarget.includes(normalizedKey)) {
       return String(value);
     }
@@ -73,16 +75,18 @@ function findInCustomFields(customFields: Record<string, any>, fieldKey: string)
 }
 
 export function getFieldValue(reg: RegistrationData, fieldKey: string): string {
+  // 1. custom_fields PRIMEIRO (fonte de verdade dos formulários dinâmicos)
+  const cf = ((reg as any).custom_fields && typeof (reg as any).custom_fields === "object") ? (reg as any).custom_fields : {};
+  const fromCustom = findInCustomFields(cf, fieldKey);
+  if (fromCustom) return fromCustom;
+
+  // 2. Fallback: coluna fixa via resolver semântico
   const knownField = resolveKnownField(fieldKey);
   if (knownField) {
     const directValue = (reg[knownField] as string) || "";
     if (directValue) return directValue;
   }
-  // Check direct property first, then custom_fields JSONB
   if ((reg as any)[fieldKey]) return (reg as any)[fieldKey];
-  const cf = ((reg as any).custom_fields && typeof (reg as any).custom_fields === "object") ? (reg as any).custom_fields : {};
-  const customValue = findInCustomFields(cf, fieldKey);
-  if (customValue) return customValue;
   return "";
 }
 
