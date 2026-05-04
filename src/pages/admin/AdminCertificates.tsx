@@ -9,6 +9,8 @@ import { Award, Download, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import CertificateVisualEditor from "@/components/CertificateVisualEditor";
 import { generateCertificatePdf, type FieldPosition } from "@/lib/certificatePdf";
 import { format } from "date-fns";
