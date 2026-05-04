@@ -301,11 +301,26 @@ export default function AdminOrders() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="font-serif text-xl font-bold text-foreground">Pedidos</h2>
-        <p className="text-sm text-muted-foreground">
-          Verifique pendentes automaticamente, confirme manualmente ou aprove comprovantes enviados pelos clientes.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h2 className="font-serif text-xl font-bold text-foreground">Pedidos</h2>
+          <p className="text-sm text-muted-foreground">
+            Verifique pendentes automaticamente, confirme manualmente ou aprove comprovantes enviados pelos clientes.
+          </p>
+        </div>
+        <div className="w-full sm:w-72 space-y-1">
+          <Label>Evento</Label>
+          <Select value={selectedEventId || undefined} onValueChange={setSelectedEventId}>
+            <SelectTrigger><SelectValue placeholder="Selecione um evento" /></SelectTrigger>
+            <SelectContent>
+              {events.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.title} {e.status === "published" ? "• Publicado" : e.status === "closed" ? "• Encerrado" : e.status === "concluded" ? "• Concluído" : "• Rascunho"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Tabs defaultValue="orders">
