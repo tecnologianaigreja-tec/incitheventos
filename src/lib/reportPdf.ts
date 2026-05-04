@@ -54,9 +54,12 @@ function checkinsByDay(regs: RegistrationData[]): Map<string, number> {
   return map;
 }
 
-export function generateEventReportPdf({ event, registrations, filterDescription }: ReportOptions) {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const pageW = 210;
+export function generateEventReportPdf({ event, registrations, filterDescription, extraColumns = [] }: ReportOptions) {
+  // Switch to landscape if there are many extra columns to give the table more room.
+  const useLandscape = extraColumns.length >= 3;
+  const doc = new jsPDF({ orientation: useLandscape ? "landscape" : "portrait", unit: "mm", format: "a4" });
+  const pageW = useLandscape ? 297 : 210;
+  const pageH = useLandscape ? 210 : 297;
   const margin = 18;
   const contentW = pageW - margin * 2;
   let y = 20;
