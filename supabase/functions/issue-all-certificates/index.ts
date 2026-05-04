@@ -7,7 +7,7 @@ const corsHeaders = {
 
 function genCode() {
   const s = crypto.randomUUID().replace(/-/g, "").toUpperCase();
-  return "CERT-" + s.slice(0, 8);
+  return "CERT-" + s.slice(0, 10);
 }
 
 Deno.serve(async (req) => {
@@ -24,7 +24,6 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Validate user via anon client
     const userClient = createClient(SUPABASE_URL, ANON, { global: { headers: { Authorization: authHeader } } });
     const { data: userData, error: userErr } = await userClient.auth.getUser(token);
     if (userErr || !userData.user) {
@@ -33,7 +32,6 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE);
 
-    // Confirm admin role
     const { data: adminRow } = await admin.from("admin_users").select("role").eq("user_id", userData.user.id).maybeSingle();
     if (!adminRow || !["superadmin", "admin"].includes((adminRow as any).role)) {
       return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -45,19 +43,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "event_id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Validate event status
     const { data: event } = await admin.from("events").select("id, status").eq("id", eventId).maybeSingle();
     if (!event || !["closed", "concluded"].includes((event as any).status)) {
       return new Response(JSON.stringify({ error: "event must be closed or concluded" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Validate template
     const { data: tpl } = await admin.from("certificate_templates").select("background_url").eq("event_id", eventId).maybeSingle();
     if (!tpl || !(tpl as any).background_url) {
       return new Response(JSON.stringify({ error: "template not configured" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Fetch all eligible registrations (paged to overcome 1000 row default)
+    // Fetch all eligible registration ids (paged to overcome 1000-row default)
     const eligibleIds: string[] = [];
     {
       const pageSize = 1000;
@@ -78,67 +74,60 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch existing certificates for these IDs
-    const existing = new Set<string>();
-    for (let i = 0; i < eligibleIds.length; i += 500) {
-      const chunk = eligibleIds.slice(i, i + 500);
-      const { data } = await admin.from("certificates").select("registration_id").in("registration_id", chunk);
-      (data || []).forEach((c: any) => existing.add(c.registration_id));
-    }
-
-    let toCreate = eligibleIds.filter((id) => !existing.has(id));
+    // Bulk upsert with ON CONFLICT DO NOTHING — DB dedupes via UNIQUE(registration_id).
     let created = 0;
-
-    // Bulk insert with retry on unique-code collision
-    for (let attempt = 0; attempt < 3 && toCreate.length > 0; attempt++) {
-      const rows = toCreate.map((registration_id) => ({
+    const CHUNK = 200;
+    for (let i = 0; i < eligibleIds.length; i += CHUNK) {
+      const chunk = eligibleIds.slice(i, i + CHUNK).map((registration_id) => ({
         registration_id,
         certificate_code: genCode(),
         validation_hash: crypto.randomUUID(),
       }));
-      // Insert in chunks of 500
-      const failed: string[] = [];
-      for (let i = 0; i < rows.length; i += 500) {
-        const slice = rows.slice(i, i + 500);
-        const { data, error } = await admin.from("certificates").insert(slice).select("registration_id");
-        if (error) {
-          // On any error in this chunk, re-fetch existing for the slice and mark missing as failed for retry
-          const sliceIds = slice.map((s) => s.registration_id);
-          const { data: existRows } = await admin.from("certificates").select("registration_id").in("registration_id", sliceIds);
-          const nowExist = new Set((existRows || []).map((c: any) => c.registration_id));
-          sliceIds.forEach((id) => { if (nowExist.has(id)) created++; else failed.push(id); });
-        } else {
-          created += (data || []).length;
+      const { data, error } = await admin
+        .from("certificates")
+        .upsert(chunk, { onConflict: "registration_id", ignoreDuplicates: true })
+        .select("registration_id");
+      if (error) {
+        console.error("[issue-all-certificates] upsert error", error.message);
+        // Fallback: row-by-row insert for this chunk
+        for (const row of chunk) {
+          const { error: e2 } = await admin.from("certificates").insert(row);
+          if (!e2) created++;
         }
+      } else {
+        created += (data || []).length;
       }
-      toCreate = failed;
     }
 
-    // Bulk update registrations that now have a certificate
-    if (created > 0) {
-      // Re-resolve the IDs that have a cert but registration not yet marked
-      const allCerted: string[] = [];
-      for (let i = 0; i < eligibleIds.length; i += 500) {
-        const chunk = eligibleIds.slice(i, i + 500);
-        const { data } = await admin.from("certificates").select("registration_id").in("registration_id", chunk);
-        (data || []).forEach((c: any) => allCerted.push(c.registration_id));
-      }
-      for (let i = 0; i < allCerted.length; i += 500) {
-        const chunk = allCerted.slice(i, i + 500);
-        await admin
-          .from("registrations")
-          .update({ certificate_status: "issued", certificate_issued_at: new Date().toISOString() })
-          .in("id", chunk)
-          .neq("certificate_status", "issued");
-      }
+    // Mark all eligible regs as issued (idempotent)
+    for (let i = 0; i < eligibleIds.length; i += 500) {
+      const chunk = eligibleIds.slice(i, i + 500);
+      await admin
+        .from("registrations")
+        .update({ certificate_status: "issued", certificate_issued_at: new Date().toISOString() })
+        .in("id", chunk)
+        .neq("certificate_status", "issued");
     }
+
+    // Final accurate count
+    let totalIssued = 0;
+    for (let i = 0; i < eligibleIds.length; i += 200) {
+      const chunk = eligibleIds.slice(i, i + 200);
+      const { count } = await admin
+        .from("certificates")
+        .select("registration_id", { count: "exact", head: true })
+        .in("registration_id", chunk);
+      totalIssued += count || 0;
+    }
+
+    console.log(`[issue-all-certificates] event=${eventId} eligible=${eligibleIds.length} created=${created} totalIssued=${totalIssued}`);
 
     return new Response(
       JSON.stringify({
         total_eligible: eligibleIds.length,
-        already_existed: existing.size,
         created,
-        failed: toCreate.length,
+        total_issued: totalIssued,
+        already_existed: Math.max(totalIssued - created, 0),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

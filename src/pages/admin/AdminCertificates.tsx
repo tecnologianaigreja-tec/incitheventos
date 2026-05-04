@@ -144,12 +144,12 @@ export default function AdminCertificates() {
       });
       if (error) throw error;
       const created = (data as any)?.created ?? 0;
-      const already = (data as any)?.already_existed ?? 0;
+      const totalIssued = (data as any)?.total_issued ?? 0;
       const total = (data as any)?.total_eligible ?? 0;
       if (created === 0) {
-        toast.info(`Nenhum novo certificado emitido (${already}/${total} já existiam)`);
+        toast.info(`Nenhum novo certificado emitido (${totalIssued}/${total} já estavam emitidos)`);
       } else {
-        toast.success(`${created} certificado(s) emitido(s) — ${already + created}/${total} no total`);
+        toast.success(`${created} novo(s) certificado(s) emitido(s) — ${totalIssued}/${total} no total`);
       }
       loadData();
     } catch (e: any) {
