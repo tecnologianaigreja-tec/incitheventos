@@ -164,7 +164,7 @@ export default function EventsListPage() {
 
       const { data, error } = await supabase
         .from("registrations")
-        .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, events(title, slug, start_date, end_date, start_time, end_time, location_name, address, city, state)")
+        .select("id, registration_code, full_name, email, cpf, registration_status, payment_status, qr_token, checkin_status, order_id, event_id, events(title, slug, status, start_date, end_date, start_time, end_time, location_name, address, city, state, workload_hours)")
         .eq("cpf", digits)
         .in("registration_status", ["confirmed", "pending_payment"]);
 
@@ -185,6 +185,22 @@ export default function EventsListPage() {
       });
 
       setRegistrations(safeRegs);
+
+      // Busca certificados emitidos para essas inscrições
+      const regIds = safeRegs.map((r) => r.id);
+      if (regIds.length > 0) {
+        const { data: certs } = await supabase
+          .from("certificates")
+          .select("registration_id, certificate_code, validation_hash")
+          .in("registration_id", regIds);
+        const map: Record<string, CertificateInfo> = {};
+        (certs || []).forEach((c: any) => {
+          map[c.registration_id] = { certificate_code: c.certificate_code, validation_hash: c.validation_hash };
+        });
+        setCertByRegId(map);
+      } else {
+        setCertByRegId({});
+      }
     } catch (err) {
       console.error("Falha inesperada na consulta:", err);
       toast.error("Falha de conexão. Verifique sua internet e tente novamente.");
