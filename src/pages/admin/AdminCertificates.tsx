@@ -82,7 +82,7 @@ export default function AdminCertificates() {
   }
 
   useEffect(() => { loadEvents(); }, []);
-  useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page]);
+  useEffect(() => { if (selectedEventId) loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedEventId, page, debouncedSearch]);
 
   async function ensureTemplateConfigured(eventId: string): Promise<boolean> {
     const { data } = await supabase
