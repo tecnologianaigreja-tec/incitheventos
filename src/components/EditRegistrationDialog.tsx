@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { AREAS, CHURCH_ROLES, CHURCH_FUNCTIONS, formatPhone } from "@/lib/constants";
+import { formatPhone } from "@/lib/constants";
 import { Loader2 } from "lucide-react";
 
 interface Props {
@@ -29,10 +29,6 @@ export default function EditRegistrationDialog({ registration, customFields, ope
         full_name: registration.full_name || "",
         phone: registration.phone || "",
         birth_date: registration.birth_date || "",
-        area: registration.area || "",
-        congregation: registration.congregation || "",
-        church_role: registration.church_role || "",
-        church_function: registration.church_function || "",
       });
       setCustomFieldsValues({ ...((registration as any).custom_fields || {}) });
     }
@@ -55,10 +51,6 @@ export default function EditRegistrationDialog({ registration, customFields, ope
       full_name: registration.full_name,
       phone: registration.phone,
       birth_date: registration.birth_date,
-      area: registration.area,
-      congregation: registration.congregation,
-      church_role: registration.church_role,
-      church_function: registration.church_function,
       custom_fields: (registration as any).custom_fields || {},
     };
 
@@ -66,10 +58,6 @@ export default function EditRegistrationDialog({ registration, customFields, ope
       full_name: form.full_name.trim(),
       phone: form.phone?.trim() || null,
       birth_date: form.birth_date || null,
-      area: form.area || null,
-      congregation: form.congregation?.trim() || null,
-      church_role: form.church_role || null,
-      church_function: form.church_function || null,
       custom_fields: customFieldsValues,
     };
 
@@ -134,34 +122,6 @@ export default function EditRegistrationDialog({ registration, customFields, ope
             <div>
               <Label>Data de nascimento</Label>
               <Input type="date" value={form.birth_date || ""} onChange={(e) => update("birth_date", e.target.value)} />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label>Área</Label>
-              <Select value={form.area || ""} onValueChange={(v) => update("area", v)}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{AREAS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Congregação</Label>
-              <Input value={form.congregation || ""} onChange={(e) => update("congregation", e.target.value)} />
-            </div>
-            <div>
-              <Label>Cargo</Label>
-              <Select value={form.church_role || ""} onValueChange={(v) => update("church_role", v)}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{CHURCH_ROLES.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Função</Label>
-              <Select value={form.church_function || ""} onValueChange={(v) => update("church_function", v)}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{CHURCH_FUNCTIONS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
-              </Select>
             </div>
           </div>
 
