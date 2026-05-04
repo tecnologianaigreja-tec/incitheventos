@@ -417,21 +417,29 @@ export default function AdminOrders() {
                         {new Date(o.created_at).toLocaleDateString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right">
-                        {isPending ? (
-                          <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="outline" onClick={() => reconcileOne(o)} disabled={reconcilingId === o.id} className="gap-1">
-                              {reconcilingId === o.id
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <CheckCircle2 className="h-3 w-3" />}
-                              Verificar
+                        <div className="flex justify-end gap-1">
+                          {isPending && (
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => reconcileOne(o)} disabled={reconcilingId === o.id} className="gap-1">
+                                {reconcilingId === o.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <CheckCircle2 className="h-3 w-3" />}
+                                Verificar
+                              </Button>
+                              <Button size="sm" variant="default" onClick={() => openManualDialog(o)} className="gap-1">
+                                <ShieldCheck className="h-3 w-3" /> Confirmar
+                              </Button>
+                            </>
+                          )}
+                          {o.payment_status !== "canceled" && o.payment_status !== "refunded" && (
+                            <Button size="sm" variant="destructive" onClick={() => openCancelDialog(o)} className="gap-1">
+                              <XCircle className="h-3 w-3" /> Cancelar
                             </Button>
-                            <Button size="sm" variant="default" onClick={() => openManualDialog(o)} className="gap-1">
-                              <ShieldCheck className="h-3 w-3" /> Confirmar
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                          )}
+                          {o.payment_status === "canceled" && (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
