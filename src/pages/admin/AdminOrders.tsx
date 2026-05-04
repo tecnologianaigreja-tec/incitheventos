@@ -229,10 +229,30 @@ export default function AdminOrders() {
       await load();
     } catch (err) {
       console.error(err); toast.error("Falha de conexão.");
-    } finally { setBulkSubmitting(false); }
   }
 
-  async function openReview(proof: PaymentProof) {
+  function openCancelDialog(order: OrderData) {
+    setCancelOrder(order);
+    setCancelReason("");
+  }
+
+  async function submitCancelOrder() {
+    if (!cancelOrder) return;
+    if (cancelReason.trim().length < 5) { toast.error("Motivo precisa ter ao menos 5 caracteres."); return; }
+    setCancelSubmitting(true);
+    try {
+      const { ok, data } = await callFunction("cancel-order", {
+        order_id: cancelOrder.id,
+        reason: cancelReason.trim(),
+      }, true);
+      if (!ok) { toast.error(data.error || "Falha ao cancelar."); return; }
+      toast.success(`Pedido ${cancelOrder.order_code} cancelado.`);
+      setCancelOrder(null); await load();
+    } catch (err) {
+      console.error(err); toast.error("Falha de conexão.");
+    } finally { setCancelSubmitting(false); }
+  }
+
     setReviewProof(proof);
     setReviewNote("");
     setReviewImageUrl(null);
