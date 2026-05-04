@@ -9,11 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus, Tag, Package, RotateCcw } from "lucide-react";
+import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus, Tag, Package, RotateCcw, ChevronDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFilter } from "@/components/DynamicFieldFilters";
-import { generateEventReportPdf } from "@/lib/reportPdf";
+import { generateEventReportPdf, type ExtraReportColumn } from "@/lib/reportPdf";
+import { generateGroupedReportPdf, type GroupField, type GroupScope } from "@/lib/groupedReportPdf";
 import EditRegistrationDialog from "@/components/EditRegistrationDialog";
 import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
@@ -63,6 +67,12 @@ export default function AdminRegistrations() {
     jaImpressos: RegistrationData[];
     semQr: number;
   }>(null);
+  const [generalReportDialog, setGeneralReportDialog] = useState(false);
+  const [groupedReportDialog, setGroupedReportDialog] = useState(false);
+  const [selectedExtraCols, setSelectedExtraCols] = useState<Set<string>>(new Set());
+  const [groupByKey, setGroupByKey] = useState<string>("");
+  const [subGroupByKey, setSubGroupByKey] = useState<string>("__none__");
+  const [groupScope, setGroupScope] = useState<GroupScope>("all");
 
   // Debounce search
   useEffect(() => {
@@ -357,78 +367,159 @@ export default function AdminRegistrations() {
   // (custom_fields jsonb) filters are applied here over the current page.
   const filtered = applyDynamicFilters(registrations, dynamicFilters);
 
-  async function handleDownloadReport() {
-    const eventData = selectedEventId !== "all"
-      ? events.find(e => e.id === selectedEventId)
-      : null;
+  // Available extra columns for the general (list) report
+  const EXTRA_FIXED_COLUMNS: { key: string; label: string; getValue: (r: RegistrationData) => string }[] = [
+    { key: "phone", label: "Telefone", getValue: r => r.phone || "" },
+    { key: "birth_date", label: "Nascimento", getValue: r => r.birth_date ? new Date(r.birth_date + "T00:00:00").toLocaleDateString("pt-BR") : "" },
+    { key: "congregation", label: "Congregação", getValue: r => r.congregation || "" },
+    { key: "area", label: "Área", getValue: r => r.area || "" },
+    { key: "church_role", label: "Cargo", getValue: r => r.church_role || "" },
+    { key: "church_function", label: "Função", getValue: r => r.church_function || "" },
+    { key: "registration_code", label: "Código", getValue: r => r.registration_code },
+    { key: "registration_type", label: "Tipo", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
+    { key: "registration_status", label: "Inscrição", getValue: r => r.registration_status },
+    { key: "label_printed_at", label: "Etiqueta", getValue: r => r.label_printed_at ? "Impressa" : "—" },
+    { key: "material_delivered_at", label: "Material", getValue: r => r.material_delivered_at ? "Entregue" : "—" },
+    { key: "created_at", label: "Inscrito em", getValue: r => new Date(r.created_at).toLocaleDateString("pt-BR") },
+  ];
 
-    if (!eventData && selectedEventId !== "all") {
-      toast.error("Evento não encontrado");
-      return;
+  // All groupable fields (for quantitative report)
+  const GROUP_FIXED_FIELDS: GroupField[] = [
+    { key: "area", label: "Área", getValue: r => r.area || "" },
+    { key: "church_role", label: "Cargo", getValue: r => r.church_role || "" },
+    { key: "church_function", label: "Função ministerial", getValue: r => r.church_function || "" },
+    { key: "congregation", label: "Congregação", getValue: r => r.congregation || "" },
+    { key: "registration_status", label: "Status da inscrição", getValue: r => r.registration_status },
+    { key: "payment_status", label: "Status do pagamento", getValue: r => r.payment_status },
+    { key: "registration_type", label: "Tipo (individual/lote)", getValue: r => r.registration_type === "individual" ? "Individual" : "Lote" },
+    { key: "checkin_status", label: "Check-in (sim/não)", getValue: r => r.checkin_status === "checked_in" ? "Sim" : "Não" },
+  ];
+
+  function getDynamicGroupFields(): GroupField[] {
+    return customFields.map(f => ({
+      key: `cf:${f.field_key}`,
+      label: f.field_label,
+      getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
+    }));
+  }
+
+  function getDynamicExtraColumns(): { key: string; label: string; getValue: (r: RegistrationData) => string }[] {
+    return customFields.map(f => ({
+      key: `cf:${f.field_key}`,
+      label: f.field_label,
+      getValue: (r: RegistrationData) => getFieldValue(r, f.field_key) || "",
+    }));
+  }
+
+  function buildEventInfoForReport() {
+    const eventData = selectedEventId !== "all" ? events.find(e => e.id === selectedEventId) : null;
+    const allEventsPrice = events.length > 0
+      ? events.reduce((sum, e) => sum + e.unit_price_cents, 0) / events.length
+      : 0;
+    return eventData || {
+      title: "Todos os Eventos",
+      start_date: events.length > 0 ? events[events.length - 1].start_date : new Date().toISOString().substring(0, 10),
+      end_date: events.length > 0 ? events[0].start_date : new Date().toISOString().substring(0, 10),
+      start_time: null,
+      end_time: null,
+      location_name: null,
+      city: null,
+      state: null,
+      unit_price_cents: Math.round(allEventsPrice),
+      max_participants: null,
+      workload_hours: null,
+    };
+  }
+
+  function buildFilterDescription(): string | null {
+    const filterParts: string[] = [];
+    if (search) filterParts.push(`Busca: "${search}"`);
+    if (statusFilter !== "all") {
+      const statusLabels: Record<string, string> = {
+        pending_payment: "Pendente", confirmed: "Confirmado", canceled: "Cancelado",
+      };
+      filterParts.push(`Status: ${statusLabels[statusFilter] || statusFilter}`);
     }
+    for (const f of dynamicFilters) filterParts.push(`${f.fieldLabel}: ${f.value}`);
+    return filterParts.length > 0 ? filterParts.join(" | ") : null;
+  }
 
+  async function fetchAllForReport(): Promise<RegistrationData[] | null> {
     if (totalCount === 0) {
       toast.error("Nenhum inscrito para gerar relatório");
-      return;
+      return null;
     }
+    const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
+    const allFiltered = applyDynamicFilters(all, dynamicFilters);
+    if (allFiltered.length === 0) {
+      toast.error("Nenhum inscrito para gerar relatório");
+      return null;
+    }
+    return allFiltered;
+  }
 
+  async function handleDownloadReport(extraColsKeys?: Set<string>) {
     setGeneratingReport(true);
-
     try {
-      // Fetch all matching registrations across pages
-      const all = await fetchAllPages<RegistrationData>(() => buildRegistrationsListQuery());
-      const allFiltered = applyDynamicFilters(all, dynamicFilters);
+      const allFiltered = await fetchAllForReport();
+      if (!allFiltered) return;
+      const eventInfo = buildEventInfoForReport();
 
-      if (allFiltered.length === 0) {
-        toast.error("Nenhum inscrito para gerar relatório");
-        return;
-      }
-
-      // Build filter description
-      const filterParts: string[] = [];
-      if (search) filterParts.push(`Busca: "${search}"`);
-      if (statusFilter !== "all") {
-        const statusLabels: Record<string, string> = {
-          pending_payment: "Pendente", confirmed: "Confirmado", canceled: "Cancelado",
-        };
-        filterParts.push(`Status: ${statusLabels[statusFilter] || statusFilter}`);
-      }
-      for (const f of dynamicFilters) {
-        filterParts.push(`${f.fieldLabel}: ${f.value}`);
-      }
-
-      // When "all events", compute a representative price from available events
-      const allEventsPrice = events.length > 0
-        ? events.reduce((sum, e) => sum + e.unit_price_cents, 0) / events.length
-        : 0;
-
-      const eventInfo = eventData || {
-        title: "Todos os Eventos",
-        start_date: events.length > 0 ? events[events.length - 1].start_date : new Date().toISOString().substring(0, 10),
-        end_date: events.length > 0 ? events[0].start_date : new Date().toISOString().substring(0, 10),
-        start_time: null,
-        end_time: null,
-        location_name: null,
-        city: null,
-        state: null,
-        unit_price_cents: Math.round(allEventsPrice),
-        max_participants: null,
-        workload_hours: null,
-      };
+      const allExtras = [...EXTRA_FIXED_COLUMNS, ...getDynamicExtraColumns()];
+      const extraColumns: ExtraReportColumn[] = extraColsKeys
+        ? allExtras.filter(c => extraColsKeys.has(c.key))
+        : [];
 
       const doc = generateEventReportPdf({
         event: eventInfo,
         registrations: allFiltered,
-        filterDescription: filterParts.length > 0 ? filterParts.join(" | ") : null,
+        filterDescription: buildFilterDescription(),
+        extraColumns,
       });
-
-      doc.save(`relatorio-${eventData?.title.replace(/\s+/g, "-").toLowerCase() || "geral"}-${new Date().toISOString().substring(0, 10)}.pdf`);
+      const baseName = (eventInfo.title || "geral").replace(/\s+/g, "-").toLowerCase();
+      doc.save(`relatorio-${baseName}-${new Date().toISOString().substring(0, 10)}.pdf`);
       toast.success("Relatório gerado com sucesso!");
+      setGeneralReportDialog(false);
     } catch (err) {
       console.error(err);
       toast.error("Erro ao gerar relatório");
     }
+    setGeneratingReport(false);
+  }
 
+  async function handleDownloadGroupedReport() {
+    if (!groupByKey) {
+      toast.error("Escolha um campo para agrupar");
+      return;
+    }
+    const allGroupFields = [...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()];
+    const gField = allGroupFields.find(f => f.key === groupByKey);
+    if (!gField) { toast.error("Campo de agrupamento inválido"); return; }
+    const sgField = subGroupByKey && subGroupByKey !== "__none__"
+      ? allGroupFields.find(f => f.key === subGroupByKey) || null
+      : null;
+
+    setGeneratingReport(true);
+    try {
+      const allFiltered = await fetchAllForReport();
+      if (!allFiltered) return;
+      const eventInfo = buildEventInfoForReport();
+      const doc = generateGroupedReportPdf({
+        event: eventInfo,
+        registrations: allFiltered,
+        filterDescription: buildFilterDescription(),
+        groupBy: gField,
+        subGroupBy: sgField,
+        scope: groupScope,
+      });
+      const baseName = (eventInfo.title || "geral").replace(/\s+/g, "-").toLowerCase();
+      doc.save(`relatorio-quantitativo-${baseName}-${new Date().toISOString().substring(0, 10)}.pdf`);
+      toast.success("Relatório quantitativo gerado!");
+      setGroupedReportDialog(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao gerar relatório quantitativo");
+    }
     setGeneratingReport(false);
   }
 
@@ -469,16 +560,28 @@ export default function AdminRegistrations() {
             {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
             Imprimir etiquetas ({totalCount})
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownloadReport}
-            disabled={generatingReport || totalCount === 0}
-            className="gap-2"
-          >
-            {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            Relatório PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={generatingReport || totalCount === 0}
+                className="gap-2"
+              >
+                {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Relatório PDF
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => { setSelectedExtraCols(new Set()); setGeneralReportDialog(true); }}>
+                Relatório geral (lista)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { setGroupByKey(""); setSubGroupByKey("__none__"); setGroupScope("all"); setGroupedReportDialog(true); }}>
+                Relatório quantitativo (agrupado)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -784,6 +887,131 @@ export default function AdminRegistrations() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* General report (column picker) dialog */}
+      <Dialog open={generalReportDialog} onOpenChange={setGeneralReportDialog}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">Relatório geral — colunas</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">
+                Colunas padrão (sempre incluídas):
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {["Nome", "E-mail", "CPF", "Pagamento", "Check-in"].map(c => (
+                  <Badge key={c} variant="secondary">{c}</Badge>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-medium mb-2">Adicionar colunas extras:</p>
+              <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+                {[...EXTRA_FIXED_COLUMNS, ...getDynamicExtraColumns()].map(c => (
+                  <label key={c.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={selectedExtraCols.has(c.key)}
+                      onCheckedChange={(v) => {
+                        setSelectedExtraCols(prev => {
+                          const next = new Set(prev);
+                          if (v) next.add(c.key); else next.delete(c.key);
+                          return next;
+                        });
+                      }}
+                    />
+                    <span>{c.label}</span>
+                  </label>
+                ))}
+              </div>
+              {selectedExtraCols.size > 5 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Dica: muitas colunas podem reduzir o tamanho do texto. O PDF mudará para paisagem automaticamente.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setGeneralReportDialog(false)} disabled={generatingReport}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => handleDownloadReport(selectedExtraCols)}
+                disabled={generatingReport}
+                className="gap-2"
+              >
+                {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Gerar PDF
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quantitative (grouped) report dialog */}
+      <Dialog open={groupedReportDialog} onOpenChange={setGroupedReportDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">Relatório quantitativo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Agrupar por *</Label>
+              <Select value={groupByKey} onValueChange={setGroupByKey}>
+                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Escolha um campo" /></SelectTrigger>
+                <SelectContent>
+                  {[...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()].map(f => (
+                    <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Sub-agrupar por (opcional)</Label>
+              <Select value={subGroupByKey} onValueChange={setSubGroupByKey}>
+                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Nenhum" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Nenhum</SelectItem>
+                  {[...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()]
+                    .filter(f => f.key !== groupByKey)
+                    .map(f => (
+                      <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Considerar</Label>
+              <RadioGroup value={groupScope} onValueChange={(v) => setGroupScope(v as GroupScope)} className="mt-1.5 space-y-1.5">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <RadioGroupItem value="all" id="scope-all" />
+                  Todos os inscritos (filtros aplicados)
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <RadioGroupItem value="confirmed" id="scope-confirmed" />
+                  Apenas confirmados
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <RadioGroupItem value="paid" id="scope-paid" />
+                  Apenas pagos
+                </label>
+              </RadioGroup>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setGroupedReportDialog(false)} disabled={generatingReport}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleDownloadGroupedReport}
+                disabled={generatingReport || !groupByKey}
+                className="gap-2"
+              >
+                {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Gerar PDF
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
