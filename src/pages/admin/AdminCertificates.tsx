@@ -42,10 +42,11 @@ export default function AdminCertificates() {
   useEffect(() => { setPage(1); }, [selectedEventId, debouncedSearch]);
 
   async function loadEvents() {
-    const { data } = await supabase.from("events").select("id, title, status, start_date, end_date, workload_hours");
+    const { data } = await supabase.from("events").select("id, title, status, start_date, end_date, workload_hours, created_at");
     setEvents(data || []);
     if (data && data.length > 0 && !selectedEventId) {
-      setSelectedEventId(data[0].id);
+      const def = getDefaultEventId(data);
+      if (def) setSelectedEventId(def);
     }
   }
 
