@@ -775,8 +775,8 @@ export default function EventsListPage() {
                           </div>
                         )}
 
-                        {/* Download button */}
-                        <div className="flex justify-center gap-3 pt-2">
+                        {/* Download buttons */}
+                        <div className="flex flex-wrap justify-center gap-3 pt-2">
                           <Button
                             variant="outline"
                             className="gap-2"
@@ -784,6 +784,16 @@ export default function EventsListPage() {
                           >
                             <Download className="h-4 w-4" /> Baixar Credencial
                           </Button>
+                          {certByRegId[selectedReg.id] && (
+                            <Button
+                              className="gap-2 gradient-gold text-white shadow-gold hover:opacity-90"
+                              onClick={() => handleDownloadCertificate(selectedReg)}
+                              disabled={downloadingCertId === selectedReg.id}
+                            >
+                              <Download className="h-4 w-4" />
+                              {downloadingCertId === selectedReg.id ? "Gerando..." : "Baixar Certificado"}
+                            </Button>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
