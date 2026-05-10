@@ -1,15 +1,15 @@
 // Idempotent seed of the check-in operator user.
 // Creates auth user "conferencia@gmail.com" and grants role "checkin_operator".
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const EMAIL = "conferencia@gmail.com";
-const PASSWORD = "conferencia33";
-const NAME = "Equipe Check-in";
+const EMAIL = Deno.env.get("CHECKIN_OPERATOR_EMAIL") || "conferencia@gmail.com";
+const PASSWORD = Deno.env.get("CHECKIN_OPERATOR_PASSWORD") || "conferencia33";
+const NAME = Deno.env.get("CHECKIN_OPERATOR_NAME") || "Equipe Check-in";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });

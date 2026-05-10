@@ -1,36 +1,46 @@
 ## Objetivo
 
-Tornar o webhook `payment-webhook` mais resiliente para evitar pedidos pagos ficarem "pendentes". Quatro ajustes pontuais, escopo restrito ao arquivo `supabase/functions/payment-webhook/index.ts`.
+Aplicar 15 correções pontuais de segurança, qualidade e bugs, sem refatorar nada além do especificado. Confirmei previamente que `SITE_NAME`/`SITE_DESCRIPTION` não são importados em lugar nenhum (só definidos em `constants.ts`), então a Mudança 14 é segura.
 
-## Mudanças (apenas neste arquivo)
+## Escopo (exatamente o que foi pedido)
 
-**1. `resolvePaymentStatus` — match parcial**
-Substituir o mapa exato de `statusMap` por verificações `status.includes(...)` para tolerar variações ("approved_payment", "payment_paid", "captured_ok", etc.).
+**Frontend**
+1. `src/integrations/supabase/client.ts` — credenciais via `import.meta.env` + guard.
+2. `src/pages/RegistrationPage.tsx` — adicionar `submittingRef.current = false;` antes dos 9 `return;` precoces (A–I) entre as linhas 377 e 435.
+3. `src/pages/RegistrationPage.tsx` — mover `const isMobileTouch = isTouchDevice();` do escopo de módulo para dentro do componente.
+4. `src/pages/OrderStatusPage.tsx` — `clearInterval` quando `payment_status !== "pending"` e bump do polling para 15000 ms.
+5. `src/App.tsx` — só a config do `QueryClient` (retry condicional, staleTime 30s, refetchOnWindowFocus: false).
+6. `src/lib/constants.ts` — remover `SITE_NAME` e `SITE_DESCRIPTION`.
+7. `index.html` — remover comentários TODO; corrigir "instituo"→"Instituto", "Pagina"→"Página", "promovido"→"promovidos" nas 3 descriptions; trocar author/twitter:site para INCITH/@incith.
+8. Limpeza de `console.log`/`console.warn` de debug (mantendo `console.error` e `console.warn` em catch de reconciliação) em:
+   - `src/pages/admin/AdminOrders.tsx`
+   - `src/pages/admin/AdminRegistrations.tsx`
+   - `src/pages/admin/AdminCertificates.tsx`
+   - `src/pages/admin/AdminCheckin.tsx`
+   - `src/components/PaymentProofUpload.tsx`
+   - `src/components/CertificateVisualEditor.tsx`
 
-**2. Extração do `externalId` — usar ID do evento**
-Trocar a ordem de fallback para priorizar identificadores de evento e evitar colisão de idempotência quando a mesma transação dispara vários eventos:
-```
-event_id → webhook_id → id
-```
-Remove `transaction_nsu` e `transaction_id` da prioridade.
+**Edge Functions**
+9. `supabase/functions/seed-checkin-operator/index.ts` — bump SDK para 2.99.0 e ler `CHECKIN_OPERATOR_EMAIL/PASSWORD/NAME` do env (com fallback).
+10. `supabase/functions/cancel-order/index.ts` — bump SDK para 2.99.0 + CORS `APP_URL`.
+11. `supabase/functions/issue-all-certificates/index.ts` — bump SDK para 2.99.0.
+12. `supabase/functions/manual-confirm-order/index.ts` — CORS `APP_URL`.
+13. `supabase/functions/bulk-confirm-orders/index.ts` — CORS `APP_URL`.
+14. `supabase/functions/review-payment-proof/index.ts` — CORS `APP_URL`.
 
-**3. Idempotência por `(externalId, eventType)`**
-Hoje qualquer evento já processado com o mesmo `externalId` é bloqueado. Passar a bloquear apenas quando `external_event_id` **e** `event_type` coincidem, e usar `.maybeSingle()` em vez de `.single()`.
+**Tooling**
+15. `vite.config.ts` + `package.json` — remover `lovable-tagger` (import, plugin e devDependency).
 
-**4. Busca de order com fallback por `invoice_slug`**
-Se `orderNsu` estiver presente, busca como hoje. Se não, tenta `payload.invoice_slug` (ou `payload.metadata.invoice_slug`) na coluna `orders.invoice_slug`.
+## Pontos de atenção (sem alterar o pedido)
 
-## Ponto de atenção (a confirmar antes de implementar)
+- **Mudança 12/13 (lovable-tagger)**: o pacote é usado pelo editor da Lovable para destacar componentes no preview. Removê-lo não quebra build/runtime, mas reduz a integração visual no editor. Aplicarei conforme pedido.
+- **Mudança 6 (CORS APP_URL)**: hoje `APP_URL` é `https://incitheventos.lovable.app`. Chamadas vindas do preview de desenvolvimento (`id-preview--…lovable.app`) passarão a ser bloqueadas pelas 4 funções admin. Aceitável dado o escopo (admin-only em produção), apenas registrando.
+- **Mudança 1 (env guard)**: o `throw` no boot impede a app de subir se as variáveis sumirem. Como o `.env` é populado automaticamente pelo Lovable, é seguro.
+- **Mudança 7**: vou localizar cada um dos 9 `return;` por correspondência exata do texto, sem renumerar nem reformatar linhas vizinhas.
 
-A mudança 4 assume que existe a coluna `orders.invoice_slug`. Preciso confirmar:
+## Validação final
 
-- Se **existir**: aplico exatamente como solicitado.
-- Se **não existir**: a edge function vai compilar, mas a query falhará em runtime quando cair nesse fallback. Nesse caso eu sugiro duas opções:
-  - (a) criar a coluna `invoice_slug` em `orders` (migration separada), ou
-  - (b) trocar o fallback por outro campo já existente (ex.: `payment_provider_reference`).
+- Confirmar build sem erros de tipo após todas as edições.
+- Não tocar em rotas, schema, tipos, estilos, ordem de campos, lógica de pagamento/check-in/certificados.
 
-Posso checar o schema antes de aplicar para evitar quebra silenciosa. Nenhuma outra parte do arquivo será alterada (validação de amount, atualização de order/registrations, audit log, CORS — tudo permanece igual).
-
-## Arquivos
-
-- `supabase/functions/payment-webhook/index.ts` — único arquivo modificado.
+Pronto para executar tudo numa única passada quando aprovado.

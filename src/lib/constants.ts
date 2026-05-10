@@ -1,5 +1,3 @@
-export const SITE_NAME = "Conferência de Apologética Cristã";
-export const SITE_DESCRIPTION = "Uma conferência transformadora sobre as razões da fé cristã";
 export const MAX_BATCH_SIZE = 10;
 export const MIN_BATCH_SIZE = 2;
 

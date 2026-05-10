@@ -61,6 +61,10 @@ export default function OrderStatusPage() {
 
       if (orderData) {
         setOrder(orderData as unknown as OrderData);
+        // Stop polling once payment is resolved
+        if (orderData.payment_status !== "pending" && interval) {
+          clearInterval(interval);
+        }
 
         const { data: regs } = await supabase
           .from("registrations")
@@ -82,7 +86,7 @@ export default function OrderStatusPage() {
       interval = setInterval(async () => {
         await reconcile();
         await load();
-      }, 8000);
+      }, 15000);
     }
 
     bootstrap();
