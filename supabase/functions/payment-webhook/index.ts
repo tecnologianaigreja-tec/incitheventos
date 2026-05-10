@@ -18,53 +18,16 @@ const corsHeaders = {
  * Otherwise fall back to `status` field mapping.
  */
 function resolvePaymentStatus(payload: Record<string, any>): string | null {
-  // Primary: InfinitePay confirmed payment — paid_amount present and > 0
-  if (
-    typeof payload.paid_amount === "number" &&
-    payload.paid_amount > 0
-  ) {
-    return "approved";
-  }
-
-  // Secondary: receipt_url is a strong signal of completed payment
-  if (payload.receipt_url && typeof payload.receipt_url === "string") {
-    return "approved";
-  }
-
-  // Tertiary: explicit status field
-  const status = (
-    payload.status ||
-    payload.event_type ||
-    payload.type ||
-    ""
-  )
-    .toString()
-    .toLowerCase()
-    .trim();
-
+  if (typeof payload.paid_amount === "number" && payload.paid_amount > 0) return "approved";
+  if (payload.receipt_url && typeof payload.receipt_url === "string") return "approved";
+  const status = (payload.status || payload.event_type || payload.type || "").toString().toLowerCase().trim();
   if (!status) return null;
-
-  const statusMap: Record<string, string> = {
-    approved: "approved",
-    paid: "approved",
-    captured: "approved",
-    completed: "approved",
-    success: "approved",
-    confirmed: "approved",
-    refused: "refused",
-    declined: "refused",
-    failed: "refused",
-    rejected: "refused",
-    canceled: "canceled",
-    cancelled: "canceled",
-    voided: "canceled",
-    expired: "expired",
-    refunded: "refunded",
-    reversed: "refunded",
-    chargeback: "refunded",
-  };
-
-  return statusMap[status] || null;
+  if (status.includes("approv") || status.includes("paid") || status.includes("success") || status.includes("confirm") || status.includes("captur") || status.includes("complet")) return "approved";
+  if (status.includes("refus") || status.includes("declin") || status.includes("fail") || status.includes("reject")) return "refused";
+  if (status.includes("cancel") || status.includes("void")) return "canceled";
+  if (status.includes("expir")) return "expired";
+  if (status.includes("refund") || status.includes("revers") || status.includes("chargeback")) return "refunded";
+  return null;
 }
 
 Deno.serve(async (req) => {
