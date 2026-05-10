@@ -18,53 +18,16 @@ const corsHeaders = {
  * Otherwise fall back to `status` field mapping.
  */
 function resolvePaymentStatus(payload: Record<string, any>): string | null {
-  // Primary: InfinitePay confirmed payment — paid_amount present and > 0
-  if (
-    typeof payload.paid_amount === "number" &&
-    payload.paid_amount > 0
-  ) {
-    return "approved";
-  }
-
-  // Secondary: receipt_url is a strong signal of completed payment
-  if (payload.receipt_url && typeof payload.receipt_url === "string") {
-    return "approved";
-  }
-
-  // Tertiary: explicit status field
-  const status = (
-    payload.status ||
-    payload.event_type ||
-    payload.type ||
-    ""
-  )
-    .toString()
-    .toLowerCase()
-    .trim();
-
+  if (typeof payload.paid_amount === "number" && payload.paid_amount > 0) return "approved";
+  if (payload.receipt_url && typeof payload.receipt_url === "string") return "approved";
+  const status = (payload.status || payload.event_type || payload.type || "").toString().toLowerCase().trim();
   if (!status) return null;
-
-  const statusMap: Record<string, string> = {
-    approved: "approved",
-    paid: "approved",
-    captured: "approved",
-    completed: "approved",
-    success: "approved",
-    confirmed: "approved",
-    refused: "refused",
-    declined: "refused",
-    failed: "refused",
-    rejected: "refused",
-    canceled: "canceled",
-    cancelled: "canceled",
-    voided: "canceled",
-    expired: "expired",
-    refunded: "refunded",
-    reversed: "refunded",
-    chargeback: "refunded",
-  };
-
-  return statusMap[status] || null;
+  if (status.includes("approv") || status.includes("paid") || status.includes("success") || status.includes("confirm") || status.includes("captur") || status.includes("complet")) return "approved";
+  if (status.includes("refus") || status.includes("declin") || status.includes("fail") || status.includes("reject")) return "refused";
+  if (status.includes("cancel") || status.includes("void")) return "canceled";
+  if (status.includes("expir")) return "expired";
+  if (status.includes("refund") || status.includes("revers") || status.includes("chargeback")) return "refunded";
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -93,11 +56,11 @@ Deno.serve(async (req) => {
       payload.metadata?.order_nsu ||
       null;
 
+    // Prefer event_id to avoid idempotency collisions on the same transaction ID
     const externalId =
-      payload.transaction_nsu ||
-      payload.id ||
       payload.event_id ||
-      payload.transaction_id ||
+      payload.webhook_id ||
+      payload.id ||
       null;
 
     const eventType =
@@ -106,20 +69,29 @@ Deno.serve(async (req) => {
       payload.status ||
       "webhook_call";
 
-    if (!orderNsu) {
-      console.error("[webhook] Missing order_nsu in payload");
+    const invoiceSlug = payload.invoice_slug || payload.metadata?.invoice_slug || null;
+
+    if (!orderNsu && !invoiceSlug) {
+      console.error("[webhook] Missing order_nsu and invoice_slug in payload");
       return respond({ error: "Missing order_nsu" }, 400);
     }
 
     // ── Find order ───────────────────────────────────────────────────
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("order_nsu", orderNsu)
-      .single();
+    let order: any = null;
+    let orderError: any = null;
+
+    if (orderNsu) {
+      const res = await supabase.from("orders").select("*").eq("order_nsu", orderNsu).single();
+      order = res.data;
+      orderError = res.error;
+    } else if (invoiceSlug) {
+      const res = await supabase.from("orders").select("*").eq("invoice_slug", invoiceSlug).single();
+      order = res.data;
+      orderError = res.error;
+    }
 
     if (!order || orderError) {
-      console.error("[webhook] Order not found for nsu:", orderNsu, orderError);
+      console.error("[webhook] Order not found for nsu:", orderNsu, "slug:", invoiceSlug, orderError);
       return respond({ error: "Order not found" }, 404);
     }
 
@@ -131,11 +103,12 @@ Deno.serve(async (req) => {
         .from("payment_events")
         .select("id")
         .eq("external_event_id", externalId)
+        .eq("event_type", eventType) // Only block if it's the exact same EVENT TYPE
         .eq("processed", true)
-        .single();
+        .maybeSingle();
 
       if (existing) {
-        console.log("[webhook] Already processed event:", externalId);
+        console.log("[webhook] Already processed event:", externalId, eventType);
         return respond({ message: "Already processed" });
       }
     }
