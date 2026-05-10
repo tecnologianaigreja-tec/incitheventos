@@ -1,47 +1,36 @@
 ## Objetivo
 
-No relatório "Lista geral" (PDF), sempre que a coluna **Área** estiver entre as colunas selecionadas, os inscritos devem sair ordenados em ordem **crescente de área** (ex.: ÁREA 1, ÁREA 2, ÁREA 8, ÁREA 9, ÁREA 12, ÁREA 26 — comparação numérica natural, não alfabética).
+Tornar o webhook `payment-webhook` mais resiliente para evitar pedidos pagos ficarem "pendentes". Quatro ajustes pontuais, escopo restrito ao arquivo `supabase/functions/payment-webhook/index.ts`.
 
-## Mudança
+## Mudanças (apenas neste arquivo)
 
-### `src/pages/admin/AdminRegistrations.tsx` — `handleDownloadReport`
+**1. `resolvePaymentStatus` — match parcial**
+Substituir o mapa exato de `statusMap` por verificações `status.includes(...)` para tolerar variações ("approved_payment", "payment_paid", "captured_ok", etc.).
 
-Antes de chamar `generateEventReportPdf`, detectar se alguma coluna selecionada representa "área":
-
-- coluna fixa: `key === "area"`, **ou**
-- coluna dinâmica (`cf:<field_key>`) cujo `field_key` normalizado contenha `"area"` (mesma regra de `isDuplicateOfFixed`).
-
-Se sim, criar uma cópia ordenada de `allFiltered` usando a função `getValue` da própria coluna de área (assim respeita a prioridade `custom_fields` > coluna fixa que já está em `resolveFixed`).
-
-Comparador: extrair o **primeiro número** do valor (`/(\d+)/`) e comparar numericamente; valores sem número vão para o fim, em ordem alfabética como desempate. Empates de número desempatam pelo nome (`full_name`) para estabilidade.
-
-```ts
-const areaCol = allExtras.find(c =>
-  c.key === "area" ||
-  (c.key.startsWith("cf:") && normKey(c.key.slice(3)).includes("area"))
-);
-const useAreaCol = areaCol && extraColsKeys?.has(areaCol.key) ? areaCol : null;
-
-const ordered = useAreaCol
-  ? [...allFiltered].sort((a, b) => {
-      const va = useAreaCol.getValue(a) || "";
-      const vb = useAreaCol.getValue(b) || "";
-      const na = parseInt((va.match(/\d+/) || [""])[0], 10);
-      const nb = parseInt((vb.match(/\d+/) || [""])[0], 10);
-      const aHas = !isNaN(na), bHas = !isNaN(nb);
-      if (aHas && bHas && na !== nb) return na - nb;
-      if (aHas && !bHas) return -1;
-      if (!aHas && bHas) return 1;
-      const cmp = va.localeCompare(vb, "pt-BR");
-      return cmp !== 0 ? cmp : a.full_name.localeCompare(b.full_name, "pt-BR");
-    })
-  : allFiltered;
+**2. Extração do `externalId` — usar ID do evento**
+Trocar a ordem de fallback para priorizar identificadores de evento e evitar colisão de idempotência quando a mesma transação dispara vários eventos:
 ```
+event_id → webhook_id → id
+```
+Remove `transaction_nsu` e `transaction_id` da prioridade.
 
-Passar `ordered` (em vez de `allFiltered`) para `generateEventReportPdf`.
+**3. Idempotência por `(externalId, eventType)`**
+Hoje qualquer evento já processado com o mesmo `externalId` é bloqueado. Passar a bloquear apenas quando `external_event_id` **e** `event_type` coincidem, e usar `.maybeSingle()` em vez de `.single()`.
 
-## Não-regressão
+**4. Busca de order com fallback por `invoice_slug`**
+Se `orderNsu` estiver presente, busca como hoje. Se não, tenta `payload.invoice_slug` (ou `payload.metadata.invoice_slug`) na coluna `orders.invoice_slug`.
 
-- Se "Área" não estiver selecionada, comportamento atual (ordem por `created_at desc` vinda do backend) é preservado.
-- Relatório agrupado e quantitativo não são afetados (já agrupam por área internamente).
-- Filtros aplicados continuam valendo: a ordenação acontece sobre o conjunto já filtrado.
+## Ponto de atenção (a confirmar antes de implementar)
+
+A mudança 4 assume que existe a coluna `orders.invoice_slug`. Preciso confirmar:
+
+- Se **existir**: aplico exatamente como solicitado.
+- Se **não existir**: a edge function vai compilar, mas a query falhará em runtime quando cair nesse fallback. Nesse caso eu sugiro duas opções:
+  - (a) criar a coluna `invoice_slug` em `orders` (migration separada), ou
+  - (b) trocar o fallback por outro campo já existente (ex.: `payment_provider_reference`).
+
+Posso checar o schema antes de aplicar para evitar quebra silenciosa. Nenhuma outra parte do arquivo será alterada (validação de amount, atualização de order/registrations, audit log, CORS — tudo permanece igual).
+
+## Arquivos
+
+- `supabase/functions/payment-webhook/index.ts` — único arquivo modificado.
