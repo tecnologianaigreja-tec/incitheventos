@@ -28,6 +28,7 @@ function DynamicField({ field, value, onChange, error }: {
   onChange: (v: string) => void;
   error?: string;
 }) {
+  const isMobileTouch = isTouchDevice();
   const errorClass = error ? "border-destructive" : "";
 
   switch (field.field_type) {
