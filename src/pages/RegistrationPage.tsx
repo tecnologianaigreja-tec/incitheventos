@@ -19,7 +19,7 @@ import { Users, User, Plus, Minus, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isTouchDevice } from "@/hooks/use-mobile";
 
-const isMobileTouch = isTouchDevice();
+
 
 // ─── Dynamic field rendering component ───
 function DynamicField({ field, value, onChange, error }: {
@@ -375,13 +375,13 @@ export default function RegistrationPage() {
     // Defense in depth against double-submit (state lag + ref guard)
     if (submitting || submittingRef.current) return;
     submittingRef.current = true;
-    if (isFull) { toast.error("Vagas esgotadas para este evento"); return; }
+    if (isFull) { toast.error("Vagas esgotadas para este evento"); submittingRef.current = false; return; }
 
     if (tab === "individual") {
       const errs = validateForm(individual, customFields);
       setIndividualErrors(errs);
-      if (Object.keys(errs).length > 0) { toast.error("Corrija os campos em destaque"); return; }
-      if (!consentTerms || !consentData) { toast.error("Aceite os termos para continuar"); return; }
+      if (Object.keys(errs).length > 0) { toast.error("Corrija os campos em destaque"); submittingRef.current = false; return; }
+      if (!consentTerms || !consentData) { toast.error("Aceite os termos para continuar"); submittingRef.current = false; return; }
     } else {
       // Validate buyer: different validation based on participation. E-mail is optional.
       const bErrs = buyerIsParticipant
@@ -391,21 +391,21 @@ export default function RegistrationPage() {
       const pErrs = participants.map(p => validateForm(p, customFields));
       setParticipantErrors(pErrs);
       const hasErrors = Object.keys(bErrs).length > 0 || pErrs.some(e => Object.keys(e).length > 0);
-      if (hasErrors) { toast.error("Corrija os campos em destaque"); return; }
-      if (!batchConsentTerms || !batchConsentData) { toast.error("Aceite os termos para continuar"); return; }
+      if (hasErrors) { toast.error("Corrija os campos em destaque"); submittingRef.current = false; return; }
+      if (!batchConsentTerms || !batchConsentData) { toast.error("Aceite os termos para continuar"); submittingRef.current = false; return; }
 
       // Check duplicate CPFs within the batch
       const allPeople = buyerIsParticipant ? [buyer, ...participants] : participants;
       const seenCpf = new Set<string>();
       for (const p of allPeople) {
         const cpfClean = (p.cpf || "").replace(/\D/g, "");
-        if (cpfClean && seenCpf.has(cpfClean)) { toast.error(`CPF ${p.cpf} está duplicado no lote`); return; }
+        if (cpfClean && seenCpf.has(cpfClean)) { toast.error(`CPF ${p.cpf} está duplicado no lote`); submittingRef.current = false; return; }
         if (cpfClean) seenCpf.add(cpfClean);
       }
 
       const count = buyerIsParticipant ? participants.length + 1 : participants.length;
-      if (count < MIN_BATCH_SIZE) { toast.error(`Mínimo de ${MIN_BATCH_SIZE} participantes`); return; }
-      if (count > MAX_BATCH_SIZE) { toast.error(`Máximo de ${MAX_BATCH_SIZE} participantes`); return; }
+      if (count < MIN_BATCH_SIZE) { toast.error(`Mínimo de ${MIN_BATCH_SIZE} participantes`); submittingRef.current = false; return; }
+      if (count > MAX_BATCH_SIZE) { toast.error(`Máximo de ${MAX_BATCH_SIZE} participantes`); submittingRef.current = false; return; }
     }
 
     // The backend will handle CPF uniqueness — if pending, it resumes the existing order
@@ -427,6 +427,7 @@ export default function RegistrationPage() {
         if (existing && existing.length > 0) {
           const names = existing.map(r => r.full_name).join(", ");
           toast.error(`Já existe inscrição confirmada neste evento para: ${names}.`);
+          submittingRef.current = false;
           return;
         }
       }
