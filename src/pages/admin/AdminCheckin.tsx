@@ -448,11 +448,9 @@ export default function AdminCheckin() {
       try {
         await tryStart(scanner, { facingMode: "environment" });
       } catch (err1: any) {
-        console.warn("[checkin] environment camera failed, trying user camera", err1);
         try {
           await tryStart(scanner, { facingMode: "user" });
         } catch (err2: any) {
-          console.warn("[checkin] user camera failed, trying enumerated cameras", err2);
           // Last resort: enumerate cameras and pick the first available deviceId
           const cameras = await Html5Qrcode.getCameras();
           if (!cameras || cameras.length === 0) {
@@ -478,7 +476,6 @@ export default function AdminCheckin() {
       setScannerActive(true);
     } catch (err: any) {
       const name = err?.name || "";
-      console.warn("[checkin] camera start failed", err);
       if (name === "NotAllowedError") {
         toast.error("Permissão de câmera negada. Habilite nas configurações do navegador.");
       } else if (name === "NotFoundError") {
