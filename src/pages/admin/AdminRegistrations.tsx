@@ -570,7 +570,7 @@ export default function AdminRegistrations() {
     setGeneratingReport(false);
   }
 
-  async function handleDownloadGroupedReport() {
+  async function handleDownloadGroupedReport(groupByKey: string, subGroupByKey: string, groupScope: GroupScope) {
     if (!groupByKey) {
       toast.error("Escolha um campo para agrupar");
       return;
@@ -657,10 +657,10 @@ export default function AdminRegistrations() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => { setSelectedExtraCols(new Set()); setGeneralReportDialog(true); }}>
+              <DropdownMenuItem onClick={() => { setGeneralReportDialog(true); }}>
                 Relatório geral (lista)
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setGroupByKey(""); setSubGroupByKey("__none__"); setGroupScope("all"); setGroupedReportDialog(true); }}>
+              <DropdownMenuItem onClick={() => { setGroupedReportDialog(true); }}>
                 Relatório quantitativo (agrupado)
               </DropdownMenuItem>
             </DropdownMenuContent>
