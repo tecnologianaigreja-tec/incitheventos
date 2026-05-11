@@ -173,10 +173,12 @@ Deno.serve(async (req) => {
       });
 
       if (check.paid) {
-        const confirmed = await applyApproval(supabase, order, {
-          paid_amount: check.paid_amount,
-          raw: check.raw,
-          source: "manual_reconcile",
+        const { confirmedCount: confirmed } = await approveOrder({
+          supabase,
+          order,
+          source: "reconciliation:manual_reconcile",
+          rawPayload: { paid_amount: check.paid_amount, raw: check.raw },
+          eventType: "reconciliation:manual_reconcile",
         });
         results.push({
           order_code: order.order_code,
