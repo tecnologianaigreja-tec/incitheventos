@@ -1,6 +1,7 @@
 // Admin-only: confirm multiple pending orders at once with a single reason.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.0";
+import { approveOrder } from "../_shared/approveOrder.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") || "*",
@@ -61,60 +62,14 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      await supabase
-        .from("orders")
-        .update({
-          payment_status: "approved",
-          paid_at: nowIso,
-          webhook_status_last_seen: order.webhook_status_last_seen ?? "manual_bulk",
-          updated_at: nowIso,
-        })
-        .eq("id", order.id);
-
-      const { data: regs } = await supabase
-        .from("registrations")
-        .select("id, qr_token")
-        .eq("order_id", order.id);
-
-      let confirmed = 0;
-      if (regs?.length) {
-        for (const reg of regs) {
-          const update: Record<string, unknown> = {
-            payment_status: "approved",
-            registration_status: "confirmed",
-            updated_at: nowIso,
-          };
-          if (!reg.qr_token) {
-            update.qr_token = crypto.randomUUID();
-            update.qr_generated_at = nowIso;
-          }
-          const { error } = await supabase.from("registrations").update(update).eq("id", reg.id);
-          if (!error) confirmed += 1;
-        }
-      }
-
-      await supabase.from("payment_events").insert({
-        order_id: order.id,
-        provider: "infinitepay",
-        event_type: "manual_bulk_confirmation",
-        external_event_id: proofRef ? `manual_bulk:${proofRef}` : null,
-        raw_payload_json: { source: "admin_bulk", reason, proof_reference: proofRef || null, actor_id: user.id },
-        processed: true,
-        processed_at: nowIso,
-      });
-
-      await supabase.from("audit_logs").insert({
-        actor_id: user.id,
-        action: "manual_bulk_confirmation",
-        entity_type: "order",
-        entity_id: order.id,
-        details: {
-          order_code: order.order_code,
-          reason,
-          proof_reference: proofRef || null,
-          confirmed_registrations: confirmed,
-          batch_size: orderIds.length,
-        },
+      const { confirmedCount: confirmed } = await approveOrder({
+        supabase,
+        order,
+        source: "manual_bulk",
+        actorId: user.id,
+        externalEventId: proofRef ? `manual_bulk:${proofRef}` : null,
+        rawPayload: { source: "admin_bulk", reason, proof_reference: proofRef || null, actor_id: user.id, batch_size: orderIds.length },
+        eventType: "manual_bulk_confirmation",
       });
 
       results.push({ order_id: order.id, order_code: order.order_code, ok: true, confirmed });
