@@ -81,7 +81,16 @@ Deno.serve(async (req) => {
       if (order.payment_status !== "pending") {
         return respond({ error: `Pedido está ${order.payment_status}` }, 400);
       }
-      confirmedCount = await approveOrder(supabase, order, user.id, proofId);
+      const { confirmedCount: cnt } = await approveOrder({
+        supabase,
+        order,
+        source: "proof_approved",
+        actorId: user.id,
+        externalEventId: `proof:${proofId}`,
+        rawPayload: { source: "admin_proof_review", actor_id: user.id, proof_id: proofId },
+        eventType: "proof_approved",
+      });
+      confirmedCount = cnt;
     }
 
     await supabase
