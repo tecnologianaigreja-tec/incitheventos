@@ -2,6 +2,7 @@
 // On approval, runs the same flow as manual-confirm-order.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.0";
+import { approveOrder } from "../_shared/approveOrder.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") || "*",
