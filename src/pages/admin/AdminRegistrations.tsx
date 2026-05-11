@@ -19,6 +19,8 @@ import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFil
 import { generateEventReportPdf, type ExtraReportColumn } from "@/lib/reportPdf";
 import { generateGroupedReportPdf, type GroupField, type GroupScope } from "@/lib/groupedReportPdf";
 import EditRegistrationDialog from "@/components/EditRegistrationDialog";
+import RegistrationDetailDialog from "@/components/admin/RegistrationDetailDialog";
+import ReportDialogs from "@/components/admin/ReportDialogs";
 import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 import AdminPagination from "@/components/admin/AdminPagination";
@@ -69,10 +71,6 @@ export default function AdminRegistrations() {
   }>(null);
   const [generalReportDialog, setGeneralReportDialog] = useState(false);
   const [groupedReportDialog, setGroupedReportDialog] = useState(false);
-  const [selectedExtraCols, setSelectedExtraCols] = useState<Set<string>>(new Set());
-  const [groupByKey, setGroupByKey] = useState<string>("");
-  const [subGroupByKey, setSubGroupByKey] = useState<string>("__none__");
-  const [groupScope, setGroupScope] = useState<GroupScope>("all");
 
   // Debounce search
   useEffect(() => {
