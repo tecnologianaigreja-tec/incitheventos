@@ -986,3 +986,6 @@ export default function AdminRegistrations() {
         onDownloadReport={handleDownloadReport}
         onDownloadGroupedReport={handleDownloadGroupedReport}
       />
+    </div>
+  );
+}
