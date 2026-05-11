@@ -54,7 +54,6 @@ Deno.serve(async (req) => {
       .in("id", orderIds);
 
     const results: Array<{ order_id: string; order_code?: string; ok: boolean; reason?: string; confirmed?: number }> = [];
-    const nowIso = new Date().toISOString();
 
     for (const order of orders || []) {
       if (order.payment_status !== "pending") {
