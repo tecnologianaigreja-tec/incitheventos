@@ -213,32 +213,30 @@ Deno.serve(async (req) => {
 
     // ── Update registrations ─────────────────────────────────────────
     if (paymentStatus === "approved") {
-      // Fetch all registrations for this order
-      const { data: regs, error: regsError } = await supabase
+      // Confirm registrations + generate QR tokens (shared logic)
+      const { data: regs } = await supabase
         .from("registrations")
-        .select("id")
+        .select("id, qr_token")
         .eq("order_id", order.id);
 
-      if (regsError) {
-        console.error("[webhook] CRITICAL: Failed to fetch registrations:", regsError);
-      } else if (regs && regs.length > 0) {
+      if (regs && regs.length > 0) {
+        let confirmed = 0;
         for (const reg of regs) {
-          const qrToken = crypto.randomUUID();
-          const { error: regUpdateError } = await supabase
-            .from("registrations")
-            .update({
-              payment_status: "approved",
-              registration_status: "confirmed",
-              qr_token: qrToken,
-              qr_generated_at: new Date().toISOString(),
-            })
-            .eq("id", reg.id);
-
-          if (regUpdateError) {
-            console.error("[webhook] CRITICAL: Failed to update registration:", reg.id, regUpdateError);
+          const update: Record<string, unknown> = {
+            payment_status: "approved",
+            registration_status: "confirmed",
+          };
+          if (!reg.qr_token) {
+            update.qr_token = crypto.randomUUID();
+            update.qr_generated_at = new Date().toISOString();
           }
+          const { error } = await supabase
+            .from("registrations")
+            .update(update)
+            .eq("id", reg.id);
+          if (!error) confirmed += 1;
         }
-        console.log("[webhook] Updated", regs.length, "registration(s) to confirmed");
+        console.log("[webhook] Updated", confirmed, "registration(s) to confirmed");
       } else {
         console.warn("[webhook] No registrations found for order:", order.id);
       }

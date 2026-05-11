@@ -5,6 +5,7 @@
 // Requires the caller to be an admin via has_role/is_admin.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.0";
+import { approveOrder } from "../_shared/approveOrder.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") || "*",
@@ -74,70 +75,20 @@ Deno.serve(async (req) => {
     }
 
     // ── Apply approval ───────────────────────────────────────────────
-    const nowIso = new Date().toISOString();
-    await supabase
-      .from("orders")
-      .update({
-        payment_status: "approved",
-        paid_at: nowIso,
-        webhook_status_last_seen: order.webhook_status_last_seen ?? "manual_confirmation",
-        updated_at: nowIso,
-      })
-      .eq("id", order.id);
-
-    const { data: regs } = await supabase
-      .from("registrations")
-      .select("id, qr_token")
-      .eq("order_id", order.id);
-
-    let confirmed = 0;
-    if (regs && regs.length > 0) {
-      for (const reg of regs) {
-        const update: Record<string, unknown> = {
-          payment_status: "approved",
-          registration_status: "confirmed",
-          updated_at: nowIso,
-        };
-        if (!reg.qr_token) {
-          update.qr_token = crypto.randomUUID();
-          update.qr_generated_at = nowIso;
-        }
-        const { error } = await supabase
-          .from("registrations")
-          .update(update)
-          .eq("id", reg.id);
-        if (!error) confirmed += 1;
-      }
-    }
-
-    await supabase.from("payment_events").insert({
-      order_id: order.id,
-      provider: "infinitepay",
-      event_type: "manual_confirmation",
-      external_event_id: proofRef ? `manual:${proofRef}` : null,
-      raw_payload_json: { source: "admin_manual", reason, proof_reference: proofRef || null, actor_id: user.id },
-      processed: true,
-      processed_at: nowIso,
-    });
-
-    await supabase.from("audit_logs").insert({
-      actor_id: user.id,
-      action: "manual_payment_confirmation",
-      entity_type: "order",
-      entity_id: order.id,
-      details: {
-        order_code: order.order_code,
-        reason,
-        proof_reference: proofRef || null,
-        paid_amount_cents: order.total_price_cents,
-        confirmed_registrations: confirmed,
-      },
+    const { confirmedCount } = await approveOrder({
+      supabase,
+      order,
+      source: "manual_confirmation",
+      actorId: user.id,
+      externalEventId: proofRef ? `manual:${proofRef}` : null,
+      rawPayload: { source: "admin_manual", reason, proof_reference: proofRef || null, actor_id: user.id },
+      eventType: "manual_confirmation",
     });
 
     return respond({
       ok: true,
       order_code: order.order_code,
-      confirmed_registrations: confirmed,
+      confirmed_registrations: confirmedCount,
     });
   } catch (err) {
     console.error("[manual-confirm-order] Unexpected error:", err);

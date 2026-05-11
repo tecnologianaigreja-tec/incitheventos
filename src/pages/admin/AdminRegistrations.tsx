@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Search, CheckCircle, FileDown, Loader2, Printer, Pencil, UserMinus, Tag, Package, RotateCcw, ChevronDown } from "lucide-react";
+import { Search, CheckCircle, FileDown, Loader2, Printer, Tag, Package, ChevronDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -19,6 +19,8 @@ import DynamicFieldFilters, { applyDynamicFilters, getFieldValue, type ActiveFil
 import { generateEventReportPdf, type ExtraReportColumn } from "@/lib/reportPdf";
 import { generateGroupedReportPdf, type GroupField, type GroupScope } from "@/lib/groupedReportPdf";
 import EditRegistrationDialog from "@/components/EditRegistrationDialog";
+import RegistrationDetailDialog from "@/components/admin/RegistrationDetailDialog";
+import ReportDialogs from "@/components/admin/ReportDialogs";
 import { printLabels } from "@/lib/labelRenderer";
 import type { LabelTemplate, LabelElement } from "@/lib/labelTypes";
 import AdminPagination from "@/components/admin/AdminPagination";
@@ -69,10 +71,6 @@ export default function AdminRegistrations() {
   }>(null);
   const [generalReportDialog, setGeneralReportDialog] = useState(false);
   const [groupedReportDialog, setGroupedReportDialog] = useState(false);
-  const [selectedExtraCols, setSelectedExtraCols] = useState<Set<string>>(new Set());
-  const [groupByKey, setGroupByKey] = useState<string>("");
-  const [subGroupByKey, setSubGroupByKey] = useState<string>("__none__");
-  const [groupScope, setGroupScope] = useState<GroupScope>("all");
 
   // Debounce search
   useEffect(() => {
@@ -572,7 +570,7 @@ export default function AdminRegistrations() {
     setGeneratingReport(false);
   }
 
-  async function handleDownloadGroupedReport() {
+  async function handleDownloadGroupedReport(groupByKey: string, subGroupByKey: string, groupScope: GroupScope) {
     if (!groupByKey) {
       toast.error("Escolha um campo para agrupar");
       return;
@@ -659,10 +657,10 @@ export default function AdminRegistrations() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => { setSelectedExtraCols(new Set()); setGeneralReportDialog(true); }}>
+              <DropdownMenuItem onClick={() => { setGeneralReportDialog(true); }}>
                 Relatório geral (lista)
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setGroupByKey(""); setSubGroupByKey("__none__"); setGroupScope("all"); setGroupedReportDialog(true); }}>
+              <DropdownMenuItem onClick={() => { setGroupedReportDialog(true); }}>
                 Relatório quantitativo (agrupado)
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -834,67 +832,18 @@ export default function AdminRegistrations() {
         onPageChange={setPage}
       />
 
-      {/* Registration Detail Dialog */}
-      <Dialog open={!!selectedReg} onOpenChange={(open) => { if (!open) setSelectedReg(null); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Ficha do Inscrito</DialogTitle>
-          </DialogHeader>
-          {selectedReg && (
-            <>
-              <div className="flex flex-wrap gap-2 pb-3 border-b border-border">
-                <Button size="sm" variant="outline" onClick={() => { setEditingReg(selectedReg); }} className="gap-1.5">
-                  <Pencil className="h-3.5 w-3.5" /> Editar dados
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => handlePrintSingle(selectedReg)} disabled={printing} className="gap-1.5">
-                  <Printer className="h-3.5 w-3.5" /> Imprimir etiqueta
-                </Button>
-                {selectedReg.label_printed_at && (
-                  <Button size="sm" variant="outline" onClick={() => unmarkPrinted(selectedReg)} className="gap-1.5">
-                    <RotateCcw className="h-3.5 w-3.5" /> Marcar como não impresso
-                  </Button>
-                )}
-                {selectedReg.material_delivered_at ? (
-                  <Button size="sm" variant="outline" onClick={() => toggleMaterial(selectedReg, false)} className="gap-1.5">
-                    <RotateCcw className="h-3.5 w-3.5" /> Reverter material
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={() => toggleMaterial(selectedReg, true)} className="gap-1.5">
-                    <Package className="h-3.5 w-3.5" /> Marcar material entregue
-                  </Button>
-                )}
-                {selectedReg.checkin_status === "checked_in" && (
-                  <Button size="sm" variant="destructive" onClick={() => setUncheckinTarget(selectedReg)} className="gap-1.5">
-                    <UserMinus className="h-3.5 w-3.5" /> Descredenciar
-                  </Button>
-                )}
-              </div>
-              <div className="space-y-1">
-                {fixedDetails.map(({ label, getValue }) => {
-                  const val = getValue(selectedReg);
-                  if (val === "—" && !["Nome completo", "E-mail", "CPF", "Código de inscrição", "Tipo", "Status pagamento", "Check-in", "Data da inscrição"].includes(label)) return null;
-                  return (
-                    <div key={label} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
-                      <span className="text-sm font-medium text-muted-foreground">{label}</span>
-                      <span className="text-sm text-foreground text-right">{val}</span>
-                    </div>
-                  );
-                })}
-                {customFields.map(f => {
-                  const val = getFieldValue(selectedReg, f.field_key);
-                  if (!val) return null;
-                  return (
-                    <div key={f.field_key} className="flex justify-between gap-4 border-b border-border/50 py-2.5">
-                      <span className="text-sm font-medium text-muted-foreground">{f.field_label}</span>
-                      <span className="text-sm text-foreground text-right">{val}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <RegistrationDetailDialog
+        registration={selectedReg}
+        onClose={() => setSelectedReg(null)}
+        customFields={customFields}
+        fixedDetails={fixedDetails}
+        onEdit={(reg) => setEditingReg(reg)}
+        onPrint={(reg) => handlePrintSingle(reg)}
+        onUnmarkPrinted={(reg) => unmarkPrinted(reg)}
+        onToggleMaterial={(reg, deliver) => toggleMaterial(reg, deliver)}
+        onUncheckin={(reg) => setUncheckinTarget(reg)}
+        printing={printing}
+      />
 
       <EditRegistrationDialog
         registration={editingReg}
@@ -975,130 +924,19 @@ export default function AdminRegistrations() {
         </DialogContent>
       </Dialog>
 
-      {/* General report (column picker) dialog */}
-      <Dialog open={generalReportDialog} onOpenChange={setGeneralReportDialog}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Relatório geral — colunas</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">
-                Colunas padrão (sempre incluídas):
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {["Nome", "E-mail", "CPF", "Pagamento", "Check-in"].map(c => (
-                  <Badge key={c} variant="secondary">{c}</Badge>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-sm font-medium mb-2">Adicionar colunas extras:</p>
-              <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-                {[...EXTRA_FIXED_COLUMNS, ...getDynamicExtraColumns()].map(c => (
-                  <label key={c.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox
-                      checked={selectedExtraCols.has(c.key)}
-                      onCheckedChange={(v) => {
-                        setSelectedExtraCols(prev => {
-                          const next = new Set(prev);
-                          if (v) next.add(c.key); else next.delete(c.key);
-                          return next;
-                        });
-                      }}
-                    />
-                    <span>{c.label}</span>
-                  </label>
-                ))}
-              </div>
-              {selectedExtraCols.size > 5 && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Dica: muitas colunas podem reduzir o tamanho do texto. O PDF mudará para paisagem automaticamente.
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setGeneralReportDialog(false)} disabled={generatingReport}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={() => handleDownloadReport(selectedExtraCols)}
-                disabled={generatingReport}
-                className="gap-2"
-              >
-                {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                Gerar PDF
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Quantitative (grouped) report dialog */}
-      <Dialog open={groupedReportDialog} onOpenChange={setGroupedReportDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-serif text-xl">Relatório quantitativo</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium">Agrupar por *</Label>
-              <Select value={groupByKey} onValueChange={setGroupByKey}>
-                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Escolha um campo" /></SelectTrigger>
-                <SelectContent>
-                  {[...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()].map(f => (
-                    <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Sub-agrupar por (opcional)</Label>
-              <Select value={subGroupByKey} onValueChange={setSubGroupByKey}>
-                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Nenhum" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Nenhum</SelectItem>
-                  {[...GROUP_FIXED_FIELDS, ...getDynamicGroupFields()]
-                    .filter(f => f.key !== groupByKey)
-                    .map(f => (
-                      <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm font-medium">Considerar</Label>
-              <RadioGroup value={groupScope} onValueChange={(v) => setGroupScope(v as GroupScope)} className="mt-1.5 space-y-1.5">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <RadioGroupItem value="all" id="scope-all" />
-                  Todos os inscritos (filtros aplicados)
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <RadioGroupItem value="confirmed" id="scope-confirmed" />
-                  Apenas confirmados
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <RadioGroupItem value="paid" id="scope-paid" />
-                  Apenas pagos
-                </label>
-              </RadioGroup>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setGroupedReportDialog(false)} disabled={generatingReport}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleDownloadGroupedReport}
-                disabled={generatingReport || !groupByKey}
-                className="gap-2"
-              >
-                {generatingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                Gerar PDF
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ReportDialogs
+        generalReportOpen={generalReportDialog}
+        onGeneralReportOpenChange={setGeneralReportDialog}
+        groupedReportOpen={groupedReportDialog}
+        onGroupedReportOpenChange={setGroupedReportDialog}
+        extraFixedColumns={EXTRA_FIXED_COLUMNS}
+        dynamicExtraColumns={getDynamicExtraColumns()}
+        groupFixedFields={GROUP_FIXED_FIELDS}
+        dynamicGroupFields={getDynamicGroupFields()}
+        generatingReport={generatingReport}
+        onDownloadReport={handleDownloadReport}
+        onDownloadGroupedReport={handleDownloadGroupedReport}
+      />
     </div>
   );
 }

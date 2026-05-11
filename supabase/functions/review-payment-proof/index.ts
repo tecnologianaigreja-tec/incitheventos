@@ -2,6 +2,7 @@
 // On approval, runs the same flow as manual-confirm-order.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.0";
+import { approveOrder } from "../_shared/approveOrder.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": Deno.env.get("APP_URL") || "*",
@@ -14,61 +15,6 @@ const respond = (body: Record<string, unknown>, status = 200) =>
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-
-async function approveOrder(supabase: any, order: any, actorId: string, proofId: string) {
-  const nowIso = new Date().toISOString();
-  await supabase
-    .from("orders")
-    .update({
-      payment_status: "approved",
-      paid_at: nowIso,
-      webhook_status_last_seen: order.webhook_status_last_seen ?? "proof_approved",
-      updated_at: nowIso,
-    })
-    .eq("id", order.id);
-
-  const { data: regs } = await supabase
-    .from("registrations")
-    .select("id, qr_token")
-    .eq("order_id", order.id);
-
-  let confirmed = 0;
-  if (regs?.length) {
-    for (const reg of regs) {
-      const update: Record<string, unknown> = {
-        payment_status: "approved",
-        registration_status: "confirmed",
-        updated_at: nowIso,
-      };
-      if (!reg.qr_token) {
-        update.qr_token = crypto.randomUUID();
-        update.qr_generated_at = nowIso;
-      }
-      const { error } = await supabase.from("registrations").update(update).eq("id", reg.id);
-      if (!error) confirmed += 1;
-    }
-  }
-
-  await supabase.from("payment_events").insert({
-    order_id: order.id,
-    provider: "infinitepay",
-    event_type: "proof_approved",
-    external_event_id: `proof:${proofId}`,
-    raw_payload_json: { source: "admin_proof_review", actor_id: actorId, proof_id: proofId },
-    processed: true,
-    processed_at: nowIso,
-  });
-
-  await supabase.from("audit_logs").insert({
-    actor_id: actorId,
-    action: "payment_proof_approved",
-    entity_type: "order",
-    entity_id: order.id,
-    details: { order_code: order.order_code, proof_id: proofId, confirmed_registrations: confirmed },
-  });
-
-  return confirmed;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -135,7 +81,16 @@ Deno.serve(async (req) => {
       if (order.payment_status !== "pending") {
         return respond({ error: `Pedido está ${order.payment_status}` }, 400);
       }
-      confirmedCount = await approveOrder(supabase, order, user.id, proofId);
+      const { confirmedCount: cnt } = await approveOrder({
+        supabase,
+        order,
+        source: "proof_approved",
+        actorId: user.id,
+        externalEventId: `proof:${proofId}`,
+        rawPayload: { source: "admin_proof_review", actor_id: user.id, proof_id: proofId },
+        eventType: "proof_approved",
+      });
+      confirmedCount = cnt;
     }
 
     await supabase

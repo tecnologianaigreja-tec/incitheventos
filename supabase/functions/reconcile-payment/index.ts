@@ -8,6 +8,7 @@
 // changes.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.0";
+import { approveOrder } from "../_shared/approveOrder.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -87,74 +88,6 @@ async function checkInfinitePayStatus(
   }
 
   return { paid: false };
-}
-
-/**
- * Apply the SAME approval flow used by payment-webhook.
- * Marks order as approved, sets paid_at, generates qr_token for every
- * registration in the order and updates registration_status to confirmed.
- */
-async function applyApproval(
-  supabase: any,
-  order: any,
-  payload: { paid_amount?: number; raw?: unknown; source: string }
-) {
-  const orderUpdate: Record<string, unknown> = {
-    payment_status: "approved",
-    paid_at: new Date().toISOString(),
-    webhook_status_last_seen: order.webhook_status_last_seen ?? "approved",
-  };
-  await supabase.from("orders").update(orderUpdate).eq("id", order.id);
-
-  const { data: regs } = await supabase
-    .from("registrations")
-    .select("id, qr_token")
-    .eq("order_id", order.id);
-
-  let confirmedCount = 0;
-  if (regs && regs.length > 0) {
-    for (const reg of regs) {
-      const update: Record<string, unknown> = {
-        payment_status: "approved",
-        registration_status: "confirmed",
-      };
-      if (!reg.qr_token) {
-        update.qr_token = crypto.randomUUID();
-        update.qr_generated_at = new Date().toISOString();
-      }
-      const { error } = await supabase
-        .from("registrations")
-        .update(update)
-        .eq("id", reg.id);
-      if (!error) confirmedCount += 1;
-    }
-  }
-
-  // Log for audit
-  await supabase.from("payment_events").insert({
-    order_id: order.id,
-    provider: "infinitepay",
-    event_type: `reconciliation:${payload.source}`,
-    external_event_id: null,
-    raw_payload_json: { paid_amount: payload.paid_amount, raw: payload.raw },
-    processed: true,
-    processed_at: new Date().toISOString(),
-  });
-
-  await supabase.from("audit_logs").insert({
-    action: "payment_reconciled_to_approved",
-    entity_type: "order",
-    entity_id: order.id,
-    details: {
-      source: payload.source,
-      order_code: order.order_code,
-      paid_amount_cents: payload.paid_amount ?? null,
-      expected_total_cents: order.total_price_cents,
-      confirmed_registrations: confirmedCount,
-    },
-  });
-
-  return confirmedCount;
 }
 
 Deno.serve(async (req) => {
@@ -240,10 +173,12 @@ Deno.serve(async (req) => {
       });
 
       if (check.paid) {
-        const confirmed = await applyApproval(supabase, order, {
-          paid_amount: check.paid_amount,
-          raw: check.raw,
-          source: "manual_reconcile",
+        const { confirmedCount: confirmed } = await approveOrder({
+          supabase,
+          order,
+          source: "reconciliation:manual_reconcile",
+          rawPayload: { paid_amount: check.paid_amount, raw: check.raw },
+          eventType: "reconciliation:manual_reconcile",
         });
         results.push({
           order_code: order.order_code,
