@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Calendar, MapPin, Download, CreditCard } from "lucide-react";
-import PaymentProofUpload from "@/components/PaymentProofUpload";
+
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 
@@ -498,14 +498,7 @@ export default function CpfLookupDialog({ open, onOpenChange }: Props) {
                               <CreditCard className="h-3 w-3" /> Pagar
                             </Button>
                           )}
-                          {r.payment_status !== "approved" && r.registration_status !== "confirmed" && (
-                            <PaymentProofUpload
-                              orderId={r.order_id}
-                              cpf={r.cpf}
-                              orderCode={r.registration_code}
-                              onSubmitted={handleCpfLookup}
-                            />
-                          )}
+
                           </div>
                         </div>
                       </CardContent>
