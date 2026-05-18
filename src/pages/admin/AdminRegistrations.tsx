@@ -197,14 +197,24 @@ export default function AdminRegistrations() {
 
   async function uncheckinRegistration(reg: RegistrationData) {
     const { data: { user } } = await supabase.auth.getUser();
+
+    // 1. Revert main registration status
     const { error } = await supabase.from("registrations").update({
       checkin_status: "not_checked_in",
       checkin_at: null,
       checkin_by_user_id: null,
     }).eq("id", reg.id);
+
     if (error) { toast.error("Erro ao descredenciar"); return; }
 
+    // 2. Clear from checkin_logs (audit)
     await supabase.from("checkin_logs").delete().eq("registration_id", reg.id);
+
+    // 3. CRITICAL FIX: Clear from checkin_days so the user disappears from the daily presence list
+    // and can be checked in again without hitting the UNIQUE constraint.
+    await supabase.from("checkin_days").delete().eq("registration_id", reg.id);
+
+    // 4. Register the undo action
     await supabase.from("audit_logs").insert({
       action: "registration_uncheckin",
       entity_type: "registration",

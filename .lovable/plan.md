@@ -1,16 +1,16 @@
-## Trocar conta InfinitePay para `$rafaelsousaservo`
+## Correção: Remover presenças fantasmas ao descredenciar
 
-O handle da InfinitePay é lido pelas Edge Functions a partir do secret `INFINITEPAY_HANDLE` (já existe no projeto). Não há nada hard-coded no código — basta atualizar o valor do secret.
+**Problema:** O botão "Descredenciar" em `AdminRegistrations.tsx` limpa o `checkin_logs`, mas esquece de limpar a tabela `checkin_days`, deixando check-ins fantasmas e impedindo novo credenciamento devido à constraint UNIQUE.
 
-### Passo único
-1. Atualizar o secret `INFINITEPAY_HANDLE` para `rafaelsousaservo` (sem o `$`, apenas o handle).
-   - Usado em: `create-checkout`, `split-batch-payment`, `reconcile-payment`, `payment-webhook`.
-   - A propagação é automática nas Edge Functions — sem deploy manual, sem alteração de código.
+**Alteração:** Substituir a função `uncheckinRegistration` (linha ~198) no arquivo `src/pages/admin/AdminRegistrations.tsx` pela versão corrigida, que inclui a exclusão dos registros correspondentes em `checkin_days`.
 
-### Verificação após troca
-- Criar uma inscrição de teste e confirmar que o link gerado aponta para `https://checkout.infinitepay.io/rafaelsousaservo/...`.
-- Confirmar que o webhook de pagamento continua chegando normalmente (a URL do webhook é configurada no painel da InfinitePay da nova conta — verificar com o dono da conta se o webhook do projeto já está cadastrado lá).
+**Detalhes técnicos:**
+- Arquivo: `src/pages/admin/AdminRegistrations.tsx`
+- Linhas afetadas: 198–220 (função `uncheckinRegistration`)
+- A única diferença é a adição de:
+  ```ts
+  await supabase.from("checkin_days").delete().eq("registration_id", reg.id);
+  ```
+  entre a limpeza de `checkin_logs` e o registro em `audit_logs`.
 
-### Atenção (importante, não envolve código)
-- O **webhook da InfinitePay precisa estar configurado na nova conta** (`$rafaelsousaservo`) apontando para a URL da função `payment-webhook`. Se a conta nova não tiver o webhook configurado, pagamentos serão recebidos mas o sistema não confirmará automaticamente as inscrições (ficarão pendentes até a reconciliação manual).
-- Pedidos antigos já criados com o handle anterior continuarão apontando para a conta antiga — apenas novos checkouts usarão a conta nova.
+Nenhum outro arquivo será alterado.
