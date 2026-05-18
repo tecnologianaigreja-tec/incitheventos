@@ -352,20 +352,41 @@ export default function AdminRegistrations() {
     if (reg.payment_status !== "approved") { toast.error("Pagamento não aprovado"); return; }
 
     const { data: { user } } = await supabase.auth.getUser();
+    const checkinAt = new Date().toISOString();
+    const today = checkinAt.slice(0, 10);
 
     const { error } = await supabase.from("registrations").update({
       checkin_status: "checked_in",
-      checkin_at: new Date().toISOString(),
+      checkin_at: checkinAt,
       checkin_by_user_id: user?.id,
     }).eq("id", reg.id);
 
     if (error) { toast.error("Erro ao fazer check-in"); return; }
+
+    // Inserir em checkin_days para que o check-in apareça na tela de Check-in
+    // e não possa ser feito novamente pelo scanner no mesmo dia.
+    await supabase.from("checkin_days").upsert({
+      registration_id: reg.id,
+      event_id: reg.event_id,
+      event_day: today,
+      checked_at: checkinAt,
+      checked_by_user_id: user?.id,
+    }, { onConflict: "registration_id,event_day" });
 
     await supabase.from("checkin_logs").insert({
       registration_id: reg.id,
       action_type: "manual",
       checked_by_user_id: user?.id,
     });
+
+    const { error: auditErr } = await supabase.from("audit_logs").insert({
+      action: "manual_checkin_from_registrations",
+      entity_type: "registration",
+      entity_id: reg.id,
+      actor_id: user?.id ?? null,
+      details: { full_name: reg.full_name, registration_code: reg.registration_code } as any,
+    });
+    if (auditErr) console.error("audit_log failed:", auditErr);
 
     toast.success(`Check-in de ${reg.full_name} realizado`);
     load();

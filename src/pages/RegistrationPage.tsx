@@ -325,23 +325,27 @@ export default function RegistrationPage() {
   useEffect(() => {
     async function load() {
       if (!slug) return;
-      const { data: ev } = await supabase
-        .from("events")
-        .select("*")
-        .eq("slug", slug)
-        .eq("status", "published")
-        .single();
-      if (ev) {
-        setEvent(ev as unknown as EventData);
-        // Load custom form fields
-        const [{ data: ff }, { count }] = await Promise.all([
-          supabase.from("event_form_fields").select("*").eq("event_id", ev.id).eq("is_active", true).order("sort_order"),
-          supabase.from("registrations").select("*", { count: "exact", head: true }).eq("event_id", ev.id).in("registration_status", ["confirmed", "pending_payment"]),
-        ]);
-        if (ff) setCustomFields(ff as unknown as EventFormField[]);
-        setRegistrationCount(count || 0);
+      try {
+        const { data: ev } = await supabase
+          .from("events")
+          .select("*")
+          .eq("slug", slug)
+          .eq("status", "published")
+          .single();
+        if (ev) {
+          setEvent(ev as unknown as EventData);
+          const [{ data: ff }, { count }] = await Promise.all([
+            supabase.from("event_form_fields").select("*").eq("event_id", ev.id).eq("is_active", true).order("sort_order"),
+            supabase.from("registrations").select("*", { count: "exact", head: true }).eq("event_id", ev.id).in("registration_status", ["confirmed", "pending_payment"]),
+          ]);
+          if (ff) setCustomFields(ff as unknown as EventFormField[]);
+          setRegistrationCount(count || 0);
+        }
+      } catch {
+        toast.error("Erro ao carregar o evento. Verifique sua conexão e tente novamente.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [slug]);

@@ -18,31 +18,34 @@ export default function AdminLoginPage() {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      toast.error("Credenciais inválidas");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        toast.error("Credenciais inválidas");
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error("Erro de autenticação"); return; }
+
+      const { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!adminUser || !["superadmin", "admin"].includes(adminUser.role)) {
+        toast.error("Acesso restrito a administradores");
+        await supabase.auth.signOut();
+        return;
+      }
+
+      navigate("/admin");
+    } catch {
+      toast.error("Erro de conexão. Tente novamente.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { toast.error("Erro de autenticação"); setLoading(false); return; }
-
-    const { data: adminUser } = await supabase
-      .from("admin_users")
-      .select("role")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (!adminUser || !["superadmin", "admin"].includes(adminUser.role)) {
-      toast.error("Acesso restrito a administradores");
-      await supabase.auth.signOut();
-      setLoading(false);
-      return;
-    }
-
-    navigate("/admin");
-    setLoading(false);
   }
 
   return (

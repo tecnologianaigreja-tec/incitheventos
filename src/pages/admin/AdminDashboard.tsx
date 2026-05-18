@@ -60,21 +60,11 @@ export default function AdminDashboard() {
       const regs = (regsRes.data || []) as any[];
       const orders = (ordersRes.data || []) as any[];
 
-      // Certificates: count by joining via registration ids of this event
-      let totalCertificates = 0;
-      const regIds = regs.map(r => r.id);
-      if (regIds.length > 0) {
-        // chunk to keep URL short
-        const chunkSize = 200;
-        for (let i = 0; i < regIds.length; i += chunkSize) {
-          const slice = regIds.slice(i, i + chunkSize);
-          const { count } = await supabase
-            .from("certificates")
-            .select("id", { count: "exact", head: true })
-            .in("registration_id", slice);
-          totalCertificates += count || 0;
-        }
-      }
+      // Certificates: single RPC call instead of N+1 chunked queries
+      const { data: certCount } = await (supabase as any).rpc("count_certificates_for_event", {
+        _event_id: selectedEventId,
+      });
+      const totalCertificates = Number(certCount) || 0;
 
       if (cancelled) return;
       setStats({

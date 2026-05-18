@@ -27,24 +27,27 @@ export default function AdminLayout() {
 
   useEffect(() => {
     async function check() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate("/admin/login"); return; }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { navigate("/admin/login"); return; }
 
-      const { data: admin } = await supabase
-        .from("admin_users")
-        .select("name, role")
-        .eq("user_id", user.id)
-        .maybeSingle();
+        const { data: admin } = await supabase
+          .from("admin_users")
+          .select("name, role")
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-      if (!admin) { navigate("/admin/login"); return; }
-      if (!["superadmin", "admin"].includes(admin.role)) {
-        // Operadores de check-in não têm acesso ao admin
-        navigate("/checkin");
-        return;
+        if (!admin) { navigate("/admin/login"); return; }
+        if (!["superadmin", "admin"].includes(admin.role)) {
+          navigate("/checkin");
+          return;
+        }
+        setAdminName(admin.name);
+        setAdminRole(admin.role === "superadmin" ? "Super Admin" : admin.role === "admin" ? "Administrador" : "Operador");
+        setLoading(false);
+      } catch {
+        navigate("/admin/login");
       }
-      setAdminName(admin.name);
-      setAdminRole(admin.role === "superadmin" ? "Super Admin" : admin.role === "admin" ? "Administrador" : "Operador");
-      setLoading(false);
     }
     check();
   }, [navigate]);

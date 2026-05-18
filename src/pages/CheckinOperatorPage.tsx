@@ -19,7 +19,7 @@ export default function CheckinOperatorPage() {
         .from("admin_users")
         .select("name, role")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (!admin || !["superadmin", "admin", "checkin_operator"].includes(admin.role)) {
         navigate("/checkin/login");
