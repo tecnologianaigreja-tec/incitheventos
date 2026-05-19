@@ -415,12 +415,12 @@ export default function RegistrationPage() {
 
     // The backend will handle CPF uniqueness — if pending, it resumes the existing order
     // We only block confirmed duplicates client-side for better UX
-    {
+    try {
       const allParticipants = tab === "individual"
         ? [individual]
         : (buyerIsParticipant ? [buyer, ...participants] : participants);
       const cpfs = allParticipants.map(p => (p.cpf || "").replace(/\D/g, "")).filter(Boolean);
-      
+
       if (cpfs.length > 0) {
         const { data: existing } = await supabase
           .from("registrations")
@@ -436,9 +436,13 @@ export default function RegistrationPage() {
           return;
         }
       }
+    } catch {
+      // Network failure on CPF check — skip client-side guard; backend will enforce uniqueness
     }
 
     setSubmitting(true);
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 30_000);
     try {
       const payload = tab === "individual"
         ? {
@@ -468,8 +472,10 @@ export default function RegistrationPage() {
           method: "POST",
           headers: { "Content-Type": "application/json", "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
           body: JSON.stringify(payload),
+          signal: abortController.signal,
         }
       );
+      clearTimeout(timeoutId);
 
       const result = await res.json();
 
@@ -494,8 +500,10 @@ export default function RegistrationPage() {
       } else {
         navigate(`/pedido/${result.order_code}`);
       }
-    } catch {
-      toast.error("Erro de conexão. Tente novamente.");
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      const isTimeout = err instanceof Error && err.name === "AbortError";
+      toast.error(isTimeout ? "A requisição demorou demais. Tente novamente." : "Erro de conexão. Tente novamente.");
       setSubmitting(false);
       submittingRef.current = false;
     }
