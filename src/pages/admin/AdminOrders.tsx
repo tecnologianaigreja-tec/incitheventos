@@ -120,7 +120,12 @@ export default function AdminOrders() {
 
     const [ordersRes, proofsRes] = await Promise.all([
       ordersQuery.range(from, to),
-      supabase.from("payment_proofs").select("*").order("created_at", { ascending: false }).limit(500),
+      supabase
+        .from("payment_proofs")
+        .select("*")
+        .eq("event_id", selectedEventId)
+        .order("created_at", { ascending: false })
+        .limit(500),
     ]);
     setOrders((ordersRes.data || []) as unknown as OrderData[]);
     setOrdersTotal(ordersRes.count || 0);
@@ -164,7 +169,7 @@ export default function AdminOrders() {
   async function reconcileAll() {
     setReconcilingAll(true);
     try {
-      const { ok, data } = await callFunction("reconcile-payment", { scan_all: true });
+      const { ok, data } = await callFunction("reconcile-payment", { scan_all: true }, true);
       if (!ok) { toast.error(data.error || "Falha."); return; }
       toast.success(`Verificados ${data.checked} pedidos · ${data.approved} confirmados.`);
       await load();

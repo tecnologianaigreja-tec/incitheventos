@@ -445,6 +445,11 @@ async function generatePaymentLink(
       phoneNumber = digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
     }
 
+    const webhookSecret = Deno.env.get("PAYMENT_WEBHOOK_SECRET");
+    const webhookUrl = webhookSecret
+      ? `${supabaseUrl}/functions/v1/payment-webhook?token=${encodeURIComponent(webhookSecret)}`
+      : `${supabaseUrl}/functions/v1/payment-webhook`;
+
     const checkoutPayload: Record<string, unknown> = {
       handle: infinitepayHandle,
       order_nsu: order.order_nsu,
@@ -460,7 +465,7 @@ async function generatePaymentLink(
         ...(phoneNumber ? { phone_number: phoneNumber } : {}),
       },
       redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
-      webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
+      webhook_url: webhookUrl,
     };
 
     console.log("InfinitePay checkout payload:", JSON.stringify(checkoutPayload));

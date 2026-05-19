@@ -140,6 +140,19 @@ Deno.serve(async (req) => {
         orders = data || [];
       }
     } else if (scanAll) {
+      // scan_all requires admin auth — it triggers up to 100 InfinitePay API calls.
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const authHeader = req.headers.get("Authorization") || "";
+      const token = authHeader.replace(/^Bearer\s+/i, "");
+      if (!token) return respond({ error: "scan_all requer autenticação de admin" }, 401);
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      const { data: { user } } = await userClient.auth.getUser();
+      if (!user) return respond({ error: "Token inválido" }, 401);
+      const { data: isAdmin } = await supabase.rpc("is_admin", { _user_id: user.id });
+      if (!isAdmin) return respond({ error: "Acesso negado. scan_all requer permissão de admin" }, 403);
+
       // Backfill mode: check up to 100 oldest pending orders
       const { data } = await supabase
         .from("orders")

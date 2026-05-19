@@ -81,7 +81,12 @@ async function generatePaymentLink(
       ...(phoneNumber ? { phone_number: phoneNumber } : {}),
     },
     redirect_url: `${appUrl}/pedido/${order.order_code}?status=redirect`,
-    webhook_url: `${supabaseUrl}/functions/v1/payment-webhook`,
+    webhook_url: (() => {
+      const secret = Deno.env.get("PAYMENT_WEBHOOK_SECRET");
+      return secret
+        ? `${supabaseUrl}/functions/v1/payment-webhook?token=${encodeURIComponent(secret)}`
+        : `${supabaseUrl}/functions/v1/payment-webhook`;
+    })(),
   };
 
   try {
@@ -118,14 +123,16 @@ async function generatePaymentLink(
 /**
  * Recalculate a batch order based on registrations still pending payment.
  * Returns the refreshed order + the list of pending registrations.
- * Generates a fresh order_nsu and clears the old payment_link so any old
- * checkout link becomes obsolete.
+ * Generates a fresh order_nsu, stores the old one in previous_order_nsu so
+ * the webhook can still find the order if someone pays the old InfinitePay
+ * link after the recalculation.
  * If no pending remain, marks the order as canceled.
  */
 async function recalculateBatchOrder(
   supabase: any,
   orderId: string,
-  unitPriceCents: number
+  unitPriceCents: number,
+  currentOrderNsu?: string | null,
 ): Promise<{ count: number; total_cents: number; new_order_nsu: string; pending_regs: any[] }> {
   const { data: pendingRegs } = await supabase
     .from("registrations")
@@ -148,6 +155,7 @@ async function recalculateBatchOrder(
         participants_count: 0,
         total_price_cents: 0,
         payment_link: null,
+        ...(currentOrderNsu ? { previous_order_nsu: currentOrderNsu } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
@@ -159,6 +167,7 @@ async function recalculateBatchOrder(
         total_price_cents: total,
         order_nsu: newNsu,
         payment_link: null,
+        ...(currentOrderNsu ? { previous_order_nsu: currentOrderNsu } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
@@ -176,7 +185,8 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json();
-    const { registration_id, mode } = body;
+    const { registration_id, mode, cpf: cpfRaw } = body;
+    const cpf = typeof cpfRaw === "string" ? cpfRaw.replace(/\D/g, "") : null;
 
     if (!registration_id || typeof registration_id !== "string") {
       return respond({ error: "registration_id obrigatório" }, 400);
@@ -197,6 +207,12 @@ Deno.serve(async (req) => {
     }
     if (registration.registration_status !== "pending_payment") {
       return respond({ error: "Inscrição não está pendente de pagamento" }, 400);
+    }
+
+    // Verify the caller owns this registration (CPF must match).
+    // Prevents unauthenticated manipulation of other users' batch orders.
+    if (mode !== "preview" && (!cpf || registration.cpf !== cpf)) {
+      return respond({ error: "CPF não confere com a inscrição" }, 403);
     }
 
     // 2) Load original order
@@ -231,16 +247,29 @@ Deno.serve(async (req) => {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // MODE: preview → just recalculate and report (no link generated)
+    // MODE: preview → read-only count, NO database mutations
+    // IMPORTANT: must NOT call recalculateBatchOrder here because that
+    // rotates the order_nsu and clears payment_link, which would break
+    // any existing InfinitePay link for this batch order.
     // ─────────────────────────────────────────────────────────────────
     if (mode === "preview") {
-      const recalc = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents);
+      const { data: pendingRegs } = await supabase
+        .from("registrations")
+        .select("id, full_name, cpf")
+        .eq("order_id", originalOrder.id)
+        .eq("registration_status", "pending_payment")
+        .order("created_at", { ascending: true });
+
+      const list = pendingRegs || [];
+      const count = list.length;
+      const total = count * event.unit_price_cents;
+
       return respond({
         order_code: originalOrder.order_code,
         unit_price_cents: event.unit_price_cents,
-        remaining_count: recalc.count,
-        remaining_total_cents: recalc.total_cents,
-        remaining_participants: recalc.pending_regs.map((r: any) => ({
+        remaining_count: count,
+        remaining_total_cents: total,
+        remaining_participants: list.map((r: any) => ({
           id: r.id,
           name: r.full_name,
           cpf_masked: maskCpf(r.cpf),
@@ -252,7 +281,7 @@ Deno.serve(async (req) => {
     // MODE: batch_remaining → recalculate + generate link for the lot
     // ─────────────────────────────────────────────────────────────────
     if (mode === "batch_remaining") {
-      const recalc = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents);
+      const recalc = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents, originalOrder.order_nsu);
 
       if (recalc.count === 0) {
         return respond({ error: "Não há inscrições pendentes neste lote" }, 400);
@@ -349,7 +378,7 @@ Deno.serve(async (req) => {
     }
 
     // Recalculate the original batch order using consolidated helper
-    const remaining = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents);
+    const remaining = await recalculateBatchOrder(supabase, originalOrder.id, event.unit_price_cents, originalOrder.order_nsu);
 
     // Generate payment link for the new individual order
     const link = await generatePaymentLink(

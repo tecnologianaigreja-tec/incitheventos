@@ -167,7 +167,11 @@ export default function CpfLookupDialog({ open, onOpenChange }: Props) {
             "Content-Type": "application/json",
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
-          body: JSON.stringify({ registration_id: splitDialogReg.id, mode }),
+          body: JSON.stringify({
+            registration_id: splitDialogReg.id,
+            mode,
+            cpf: cpfInput.replace(/\D/g, ""),
+          }),
         }
       );
       const result = await res.json();
@@ -444,7 +448,7 @@ export default function CpfLookupDialog({ open, onOpenChange }: Props) {
                                             "Content-Type": "application/json",
                                             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
                                           },
-                                          body: JSON.stringify({ registration_id: r.id, mode: "preview" }),
+                                          body: JSON.stringify({ registration_id: r.id, mode: "preview", cpf: cpfInput.replace(/\D/g, "") }),
                                         }
                                       );
                                       const prev = await prevRes.json();

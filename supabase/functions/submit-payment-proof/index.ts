@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     // Validate order
     const { data: order } = await supabase
       .from("orders")
-      .select("id, payment_status, order_code")
+      .select("id, payment_status, order_code, event_id")
       .eq("id", orderId)
       .maybeSingle();
     if (!order) return respond({ error: "Pedido não encontrado" }, 404);
@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
 
     const { error: insertError } = await supabase.from("payment_proofs").insert({
       order_id: orderId,
+      event_id: order.event_id || null,
       buyer_cpf: cpf,
       image_url: imagePath,
       message: message || null,

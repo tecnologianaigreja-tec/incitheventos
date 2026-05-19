@@ -35,6 +35,22 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Verify webhook secret token if configured.
+  // Set PAYMENT_WEBHOOK_SECRET in Supabase Edge Function secrets.
+  // Existing webhook URLs without the token continue to work while the secret is unset.
+  const webhookSecret = Deno.env.get("PAYMENT_WEBHOOK_SECRET");
+  if (webhookSecret) {
+    const url = new URL(req.url);
+    const token = url.searchParams.get("token");
+    if (token !== webhookSecret) {
+      console.error("[webhook] Unauthorized: invalid or missing token");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const respond = (body: Record<string, any>, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
@@ -78,20 +94,26 @@ Deno.serve(async (req) => {
 
     // ── Find order ───────────────────────────────────────────────────
     let order: any = null;
-    let orderError: any = null;
 
     if (orderNsu) {
-      const res = await supabase.from("orders").select("*").eq("order_nsu", orderNsu).single();
+      const res = await supabase.from("orders").select("*").eq("order_nsu", orderNsu).maybeSingle();
       order = res.data;
-      orderError = res.error;
-    } else if (invoiceSlug) {
-      const res = await supabase.from("orders").select("*").eq("invoice_slug", invoiceSlug).single();
-      order = res.data;
-      orderError = res.error;
+      // Fallback: the NSU may have been rotated after a batch split.
+      // previous_order_nsu preserves the old value so we can still find the order.
+      if (!order) {
+        const res2 = await supabase.from("orders").select("*").eq("previous_order_nsu", orderNsu).maybeSingle();
+        order = res2.data;
+        if (order) console.log("[webhook] Order found via previous_order_nsu:", order.id);
+      }
     }
 
-    if (!order || orderError) {
-      console.error("[webhook] Order not found for nsu:", orderNsu, "slug:", invoiceSlug, orderError);
+    if (!order && invoiceSlug) {
+      const res = await supabase.from("orders").select("*").eq("invoice_slug", invoiceSlug).maybeSingle();
+      order = res.data;
+    }
+
+    if (!order) {
+      console.error("[webhook] Order not found for nsu:", orderNsu, "slug:", invoiceSlug);
       return respond({ error: "Order not found" }, 404);
     }
 

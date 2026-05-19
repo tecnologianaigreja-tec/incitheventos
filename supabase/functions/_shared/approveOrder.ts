@@ -22,6 +22,20 @@ export async function approveOrder(opts: ApproveOptions): Promise<ApproveResult>
   const { supabase, order, source, actorId, externalEventId, rawPayload, eventType } = opts;
   const nowIso = new Date().toISOString();
 
+  // Optimistic lock: re-read the order status before writing to prevent
+  // double-approval when two concurrent callers (e.g. webhook + reconcile)
+  // both see "pending" and both call approveOrder at the same time.
+  const { data: current } = await supabase
+    .from("orders")
+    .select("payment_status")
+    .eq("id", order.id)
+    .single();
+
+  if (current?.payment_status === "approved") {
+    console.log("[approveOrder] Order already approved, skipping (race guard):", order.id);
+    return { confirmedCount: 0 };
+  }
+
   // 1. Update order status
   await supabase
     .from("orders")
