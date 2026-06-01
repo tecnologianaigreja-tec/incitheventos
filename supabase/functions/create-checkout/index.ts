@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      await supabase.from("orders").update({ payment_link: link }).eq("id", existingOrder.id);
+      await supabase.from("orders").update({ payment_link: link, payment_handle: currentHandle }).eq("id", existingOrder.id);
       await supabase.from("audit_logs").insert({
         action: "checkout_link_regenerated",
         entity_type: "order",
