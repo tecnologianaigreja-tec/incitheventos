@@ -466,10 +466,12 @@ export default function CpfLookupDialog({ open, onOpenChange }: Props) {
                                     }
                                     return;
                                   }
-                                  if (order.payment_link) {
-                                    window.location.href = order.payment_link;
-                                    return;
-                                  }
+                                  // Always regenerate server-side: if the saved
+                                  // link still belongs to the current InfinitePay
+                                  // account it is returned as-is; if the account
+                                  // (handle) changed, a fresh link for the current
+                                  // account is generated so the payment lands in
+                                  // the right place and the webhook confirms it.
                                   try {
                                     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
                                     const regenRes = await fetch(
