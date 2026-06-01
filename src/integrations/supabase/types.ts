@@ -467,6 +467,7 @@ export type Database = {
           payment_provider: string | null
           payment_provider_reference: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
+          previous_order_nsu: string | null
           purchase_type: Database["public"]["Enums"]["purchase_type"]
           redirect_status_last_seen: string | null
           total_price_cents: number
@@ -495,6 +496,7 @@ export type Database = {
           payment_provider?: string | null
           payment_provider_reference?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
+          previous_order_nsu?: string | null
           purchase_type?: Database["public"]["Enums"]["purchase_type"]
           redirect_status_last_seen?: string | null
           total_price_cents: number
@@ -523,6 +525,7 @@ export type Database = {
           payment_provider?: string | null
           payment_provider_reference?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
+          previous_order_nsu?: string | null
           purchase_type?: Database["public"]["Enums"]["purchase_type"]
           redirect_status_last_seen?: string | null
           total_price_cents?: number
@@ -595,6 +598,7 @@ export type Database = {
         Row: {
           buyer_cpf: string
           created_at: string
+          event_id: string | null
           id: string
           image_url: string
           message: string | null
@@ -608,6 +612,7 @@ export type Database = {
         Insert: {
           buyer_cpf: string
           created_at?: string
+          event_id?: string | null
           id?: string
           image_url: string
           message?: string | null
@@ -621,6 +626,7 @@ export type Database = {
         Update: {
           buyer_cpf?: string
           created_at?: string
+          event_id?: string | null
           id?: string
           image_url?: string
           message?: string | null
@@ -631,7 +637,15 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "payment_proofs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       registrations: {
         Row: {
@@ -797,6 +811,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      count_certificates_for_event: {
+        Args: { _event_id: string }
+        Returns: number
+      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_checkin_operator: { Args: { _user_id: string }; Returns: boolean }
       mark_labels_printed: {
