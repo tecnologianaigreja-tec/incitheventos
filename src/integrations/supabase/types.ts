@@ -463,6 +463,7 @@ export type Database = {
           paid_at: string | null
           parent_order_id: string | null
           participants_count: number
+          payment_handle: string | null
           payment_link: string | null
           payment_provider: string | null
           payment_provider_reference: string | null
@@ -492,6 +493,7 @@ export type Database = {
           paid_at?: string | null
           parent_order_id?: string | null
           participants_count?: number
+          payment_handle?: string | null
           payment_link?: string | null
           payment_provider?: string | null
           payment_provider_reference?: string | null
@@ -521,6 +523,7 @@ export type Database = {
           paid_at?: string | null
           parent_order_id?: string | null
           participants_count?: number
+          payment_handle?: string | null
           payment_link?: string | null
           payment_provider?: string | null
           payment_provider_reference?: string | null

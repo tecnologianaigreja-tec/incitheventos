@@ -51,9 +51,10 @@ Deno.serve(async (req) => {
     // back to the registration form when the original link failed to be created.
     if (body && typeof body === "object" && body.regenerate_for_order_id) {
       const orderId = String(body.regenerate_for_order_id);
+      const currentHandle = Deno.env.get("INFINITEPAY_HANDLE") || null;
       const { data: existingOrder, error: regenErr } = await supabase
         .from("orders")
-        .select("id, order_code, order_nsu, payment_link, payment_status, total_price_cents, participants_count, unit_price_cents, buyer_name, buyer_email, buyer_phone, buyer_document, event_id, purchase_type")
+        .select("id, order_code, order_nsu, payment_link, payment_handle, payment_status, total_price_cents, participants_count, unit_price_cents, buyer_name, buyer_email, buyer_phone, buyer_document, event_id, purchase_type")
         .eq("id", orderId)
         .maybeSingle();
 
@@ -66,7 +67,14 @@ Deno.serve(async (req) => {
           { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (existingOrder.payment_link) {
+      // The saved link is only reusable when it exists AND was generated with
+      // the InfinitePay account (handle) currently configured. If the handle
+      // changed (account switch), the old link points to the previous account
+      // and must be regenerated so the money lands in the current account.
+      const linkIsFresh =
+        !!existingOrder.payment_link &&
+        existingOrder.payment_handle === currentHandle;
+      if (linkIsFresh) {
         return new Response(
           JSON.stringify({ order_code: existingOrder.order_code, payment_link: existingOrder.payment_link, total_price_cents: existingOrder.total_price_cents, participants_count: existingOrder.participants_count }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -109,7 +117,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      await supabase.from("orders").update({ payment_link: link }).eq("id", existingOrder.id);
+      await supabase.from("orders").update({ payment_link: link, payment_handle: currentHandle }).eq("id", existingOrder.id);
       await supabase.from("audit_logs").insert({
         action: "checkout_link_regenerated",
         entity_type: "order",
@@ -488,12 +496,14 @@ async function generatePaymentLink(
         const m = link.match(/[?&]lenc=([^&]+)/);
         if (m) slug = decodeURIComponent(m[1]);
       }
-      if (slug) {
-        try {
-          await supabase.from("orders").update({ invoice_slug: slug }).eq("id", order.id);
-        } catch (e) {
-          console.warn("Could not persist invoice_slug:", e);
-        }
+      // Persist the slug and the handle that generated this link, so a later
+      // account switch (handle change) can detect a stale link and regenerate.
+      try {
+        const update: Record<string, unknown> = { payment_handle: infinitepayHandle };
+        if (slug) update.invoice_slug = slug;
+        await supabase.from("orders").update(update).eq("id", order.id);
+      } catch (e) {
+        console.warn("Could not persist invoice_slug/payment_handle:", e);
       }
       return link;
     } else {
