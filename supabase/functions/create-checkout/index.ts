@@ -496,12 +496,14 @@ async function generatePaymentLink(
         const m = link.match(/[?&]lenc=([^&]+)/);
         if (m) slug = decodeURIComponent(m[1]);
       }
-      if (slug) {
-        try {
-          await supabase.from("orders").update({ invoice_slug: slug }).eq("id", order.id);
-        } catch (e) {
-          console.warn("Could not persist invoice_slug:", e);
-        }
+      // Persist the slug and the handle that generated this link, so a later
+      // account switch (handle change) can detect a stale link and regenerate.
+      try {
+        const update: Record<string, unknown> = { payment_handle: infinitepayHandle };
+        if (slug) update.invoice_slug = slug;
+        await supabase.from("orders").update(update).eq("id", order.id);
+      } catch (e) {
+        console.warn("Could not persist invoice_slug/payment_handle:", e);
       }
       return link;
     } else {
