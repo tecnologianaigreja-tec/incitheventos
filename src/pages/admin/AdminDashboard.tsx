@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { formatCentsToBRL } from "@/lib/constants";
 import { getDefaultEventId } from "@/lib/utils";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 import { Users, DollarSign, QrCode, Award, ShoppingCart, UserCheck, TrendingUp } from "lucide-react";
 
 interface Stats {
@@ -48,17 +49,14 @@ export default function AdminDashboard() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [regsRes, ordersRes] = await Promise.all([
-        supabase.from("registrations")
+      const [regs, orders] = await Promise.all([
+        fetchAllPages<any>(() => supabase.from("registrations")
           .select("id, registration_status, registration_type, checkin_status, payment_status")
-          .eq("event_id", selectedEventId),
-        supabase.from("orders")
+          .eq("event_id", selectedEventId)),
+        fetchAllPages<any>(() => supabase.from("orders")
           .select("payment_status, total_price_cents, purchase_type")
-          .eq("event_id", selectedEventId),
+          .eq("event_id", selectedEventId)),
       ]);
-
-      const regs = (regsRes.data || []) as any[];
-      const orders = (ordersRes.data || []) as any[];
 
       // Certificates: single RPC call instead of N+1 chunked queries
       const { data: certCount } = await (supabase as any).rpc("count_certificates_for_event", {
