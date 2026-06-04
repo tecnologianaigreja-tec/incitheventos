@@ -65,13 +65,16 @@ export default function AdminDashboard() {
       const totalCertificates = Number(certCount) || 0;
 
       if (cancelled) return;
+      
+      const activeRegs = regs.filter(r => r.registration_status !== "canceled");
+
       setStats({
-        totalRegistrations: regs.length,
-        totalPaid: regs.filter(r => r.registration_status === "confirmed").length,
-        totalPending: regs.filter(r => r.registration_status === "pending_payment").length,
-        totalBatch: regs.filter(r => r.registration_type === "batch").length,
-        totalIndividual: regs.filter(r => r.registration_type === "individual").length,
-        totalCheckedIn: regs.filter(r => r.checkin_status === "checked_in").length,
+        totalRegistrations: activeRegs.length,
+        totalPaid: activeRegs.filter(r => r.registration_status === "confirmed").length,
+        totalPending: activeRegs.filter(r => r.registration_status === "pending_payment").length,
+        totalBatch: activeRegs.filter(r => r.registration_type === "batch").length,
+        totalIndividual: activeRegs.filter(r => r.registration_type === "individual").length,
+        totalCheckedIn: activeRegs.filter(r => r.checkin_status === "checked_in").length,
         totalCertificates,
         totalRevenue: orders.filter(o => o.payment_status === "approved").reduce((s: number, o: any) => s + o.total_price_cents, 0),
       });
