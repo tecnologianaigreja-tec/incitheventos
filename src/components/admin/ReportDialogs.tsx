@@ -57,7 +57,7 @@ export default function ReportDialogs({
                 Colunas padrão (sempre incluídas):
               </p>
               <div className="flex flex-wrap gap-2">
-                {["Nome", "E-mail", "CPF", "Pagamento", "Check-in"].map(c => (
+                {["Nome", "E-mail", "Pagamento", "Check-in"].map(c => (
                   <Badge key={c} variant="secondary">{c}</Badge>
                 ))}
               </div>

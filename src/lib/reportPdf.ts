@@ -241,7 +241,6 @@ export function generateEventReportPdf({ event, registrations, filterDescription
   const fixedCols: Col[] = [
     { label: "Nome", weight: 3, getValue: r => r.full_name },
     { label: "E-mail", weight: 3, getValue: r => r.email },
-    { label: "CPF", weight: 1.6, getValue: r => r.cpf },
     { label: "Pagamento", weight: 1.2, getValue: r => r.payment_status === "approved" ? "Pago" : r.payment_status === "pending" ? "Pendente" : r.payment_status },
     { label: "Check-in", weight: 0.8, getValue: r => r.checkin_status === "checked_in" ? "✓" : "—" },
   ];
