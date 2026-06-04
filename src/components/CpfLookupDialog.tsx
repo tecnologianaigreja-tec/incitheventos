@@ -598,7 +598,7 @@ export default function CpfLookupDialog({ open, onOpenChange }: Props) {
 
                           const { data: order } = await supabase
                             .from("orders")
-                            .select("payment_link, payment_status, order_code")
+                            .select("payment_status, purchase_type, total_price_cents, participants_count, unit_price_cents, payment_link")
                             .eq("id", selectedReg.order_id)
                             .single();
                           if (order?.payment_status === "approved") {
@@ -607,10 +607,68 @@ export default function CpfLookupDialog({ open, onOpenChange }: Props) {
                             setSelectedReg(null);
                             return;
                           }
-                          if (order?.payment_link) {
-                            window.location.href = order.payment_link;
-                          } else {
-                            navigate(`/evento/${(selectedReg.events as any).slug}/inscricao`);
+                          if (order?.purchase_type === "batch") {
+                            setSplitOrder({
+                              purchase_type: order.purchase_type,
+                              total_price_cents: order.total_price_cents,
+                              participants_count: order.participants_count,
+                              payment_link: order.payment_link,
+                              unit_price_cents: order.unit_price_cents,
+                            });
+                            setSplitDialogReg(selectedReg);
+                            setSplitPreview(null);
+                            setSplitPreviewLoading(true);
+                            try {
+                              const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                              const prevRes = await fetch(
+                                `https://${projectId}.supabase.co/functions/v1/split-batch-payment`,
+                                {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                  },
+                                  body: JSON.stringify({ registration_id: selectedReg.id, mode: "preview", cpf: cpfInput.replace(/\D/g, "") }),
+                                }
+                              );
+                              const prev = await prevRes.json();
+                              if (prevRes.ok) {
+                                setSplitPreview({
+                                  remaining_count: prev.remaining_count,
+                                  remaining_total_cents: prev.remaining_total_cents,
+                                  remaining_participants: prev.remaining_participants || [],
+                                });
+                              }
+                            } catch (err) {
+                              console.error("Falha ao carregar preview do lote:", err);
+                            } finally {
+                              setSplitPreviewLoading(false);
+                            }
+                            return;
+                          }
+                          
+                          try {
+                            const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+                            const regenRes = await fetch(
+                              `https://${projectId}.supabase.co/functions/v1/create-checkout`,
+                              {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                                },
+                                body: JSON.stringify({ regenerate_for_order_id: selectedReg.order_id }),
+                              }
+                            );
+                            const regenData = await regenRes.json().catch(() => ({}));
+                            if (regenRes.ok && regenData?.payment_link) {
+                              window.location.href = regenData.payment_link;
+                              return;
+                            }
+                            toast.error(regenData?.error || "Não foi possível gerar o link de pagamento. Tente novamente em instantes.");
+                          } catch (err2) {
+                            console.error("Falha ao regenerar link de pagamento:", err2);
+                            toast.error("Falha de conexão ao gerar link de pagamento. Tente novamente.");
                           }
                         }}
                       >
